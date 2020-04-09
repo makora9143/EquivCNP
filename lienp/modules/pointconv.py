@@ -1,12 +1,21 @@
+from typing import Tuple
 import torch
 import torch.nn as nn
+from torch import Tensor
+
 
 from . import Swish, MaskBatchNormNd, Apply, FartherSubsample
 from ..utils import knn_points, index_points
 
 
 class LinearBlock(nn.Module):
-    def __init__(self, in_features, out_features, act=None, bn=True):
+    def __init__(
+            self,
+            in_features: int,
+            out_features: int,
+            act: nn.Module = None,
+            bn: bool = True
+    ):
         super().__init__()
 
         self.in_features = in_features
@@ -16,7 +25,7 @@ class LinearBlock(nn.Module):
         self.bn = MaskBatchNormNd(self.out_features) if bn else nn.Sequential()
         self.act = Apply(Swish() if act is None else nn.ReLU(), dim=1)
 
-    def forward(self, x):
+    def forward(self, x: Tensor):
         h = self.linear(x)
         h = self.bn(h)
         h = self.act(h)
@@ -24,7 +33,14 @@ class LinearBlock(nn.Module):
 
 
 class WeightNet(nn.Module):
-    def __init__(self, in_features, out_features, mid_features=32, act=None, bn=True):
+    def __init__(
+            self,
+            in_features: int,
+            out_features: int,
+            mid_features: int = 32,
+            act: nn.Module = None,
+            bn: bool = True
+    ):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -38,12 +54,23 @@ class WeightNet(nn.Module):
             LinearBlock(mid_features, out_features, act, bn),
         )
 
-    def forward(self, x):
+    def forward(self, x: Tensor):
         return self.net(x)
 
 
 class PointConv(nn.Module):
-    def __init__(self, in_channels, out_channels, nbhd=32, coords_dim=3, sampling_fraction=1, knn_channels=None, act=None, bn=False, mean=False):
+    def __init__(
+            self,
+            in_channels: int,
+            out_channels: int,
+            nbhd: int = 32,
+            coords_dim: int = 3,
+            sampling_fraction: float = 1,
+            knn_channels: int = None,
+            act: nn.Module = None,
+            bn: bool = False,
+            mean: bool = False
+    ):
         super().__init__()
 
         self.in_channels = in_channels
@@ -58,16 +85,22 @@ class PointConv(nn.Module):
         self.mean = mean
         self.subsample = FartherSubsample(sampling_fraction, knn_channels=knn_channels)
 
-    def forward(self, inputs):
+    def forward(self, inputs: Tuple[Tensor, Tensor, Tensor]):
         query_coords, query_values, query_mask = self.subsample(inputs)
         nbhd_coords, nbhd_values, nbhd_mask = self.extract_neighborhood(inputs, query_coords)
         # (B, M, nbhd, D) = (B, M, 1, D) - (B, M, nbhd, D)
         coords_deltas = self.get_embedded_group_elements(query_coords.unsqueeze(2), nbhd_coords)
         convolved_values = self.point_conv(coords_deltas, nbhd_values, nbhd_mask)
-        convoleved_wzeros = torch.where(query_mask.unsqueeze(-1), convolved_values, torch.zeros_like(convolved_values))
+        convoleved_wzeros = torch.where(query_mask.unsqueeze(-1),
+                                        convolved_values,
+                                        torch.zeros_like(convolved_values))
         return query_coords, convoleved_wzeros, query_mask
 
-    def extract_neighborhood(self, inputs, query_coords):
+    def extract_neighborhood(
+            self,
+            inputs: Tuple[Tensor, Tensor, Tensor],
+            query_coords: Tensor
+    ):
         """Extract neighborhood
         # FIXME 各バッチBにおいて，N個の中から，M
 
@@ -89,10 +122,10 @@ class PointConv(nn.Module):
         neighbor_mask = index_points(mask, neighbor_indices)
         return neighbor_coords, neighbor_values, neighbor_mask
 
-    def get_embedded_group_elements(self, output_coords, nbhd_coords):
+    def get_embedded_group_elements(self, output_coords: Tensor, nbhd_coords: Tensor):
         return output_coords - nbhd_coords
 
-    def point_conv(self, embedded_group_elements, nbhd_values, nbhd_mask):
+    def point_conv(self, embedded_group_elements: Tensor, nbhd_values: Tensor, nbhd_mask: Tensor):
         """Point Convolution
 
         Args:
@@ -102,7 +135,6 @@ class PointConv(nn.Module):
 
         Return:
             convolved_value (B, M, Cout)
-
         """
         B, M, nbhd, C = nbhd_values.shape
         _, penultimate_kernel_weights, _ = self.weightnet(
