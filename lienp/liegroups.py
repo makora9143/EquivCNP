@@ -7,9 +7,9 @@ def norm(x, dim):
 
 
 class LieGroup(object):
-    rep_dim = NotImplemented # dimension on which G acts
-    embed_dim = NotImplemented # dimension that g is embedded into
-    q_dim = NotImplemented # dimension which the quotient space X/G is embedded
+    rep_dim = NotImplemented  # dimension on which G acts
+    embed_dim = NotImplemented  # dimension that g is embedded into
+    q_dim = NotImplemented  # dimension which the quotient space X/G is embedded
 
     def __init__(self, alpha=.2):
         super().__init__()
@@ -28,17 +28,14 @@ class LieGroup(object):
         assert order <= 4, "BCH only supported up to order 4"
         B = self.bracket
         z = a + b
-        if order == 1:
-            return z
+        if order == 1: return z
         ab = B(a, b)
         z += (1 / 2) * ab
-        if order == 2:
-            return z
+        if order == 2: return z
         aab = B(a, ab)
         bba = B(b, -ab)
         z += (1 / 12) * (aab + bba)
-        if order == 3:
-            return z
+        if order == 3: return z
         baab = B(b, aab)
         z += -(1 / 24) * baab
         return z
@@ -55,7 +52,8 @@ class LieGroup(object):
     def distance(self, abq_pairs):
         ab_dist = norm(abq_pairs[..., :self.embed_dim], dim=-1)
         qa = abq_pairs[..., self.embed_dim:self.embed_dim + self.q_dim]
-        qb = abq_pairs[..., self.embed_dim + self.q_dim:self.embed_dim +2 * self.q_dim]
+        qb = abq_pairs[..., self.embed_dim + self.q_dim:self.embed_dim +
+                       2 * self.q_dim]
         qa_qb_dist = norm(qa - qb, dim=-1)
         return ab_dist * self.alpha + (1 - self.alpha) * qa_qb_dist
 
@@ -63,15 +61,22 @@ class LieGroup(object):
         """assumes p has shape (*,n,2), vals has shape (*,n,c), mask has shape (*,n)
             returns (a,v) with shapes [(*,n*nsamples,embed_dim),(*,n*nsamples,c)"""
         p, v, m = x
-        expanded_a, expanded_q = self.lifted_elems(p, m, nsamples, **kwargs)  # (bs,n*ns,d), (bs,n*ns,qd)
+        expanded_a, expanded_q = self.lifted_elems(
+            p, m, nsamples, **kwargs)  # (bs,n*ns,d), (bs,n*ns,qd)
         nsamples = expanded_a.shape[-2] // m.shape[-1]
         # expand v and mask like q
-        expanded_v = v[..., None, :].repeat((1,) * len(v.shape[:-1]) + (nsamples, 1))  # (bs,n,c) -> (bs,n,1,c) -> (bs,n,ns,c)
-        expanded_v = expanded_v.reshape(*expanded_a.shape[:-1], v.shape[-1])  # (bs,n,ns,c) -> (bs,n*ns,c)
-        expanded_mask = m[..., None].repeat((1,) * len(v.shape[:-1]) + (nsamples,))  # (bs,n) -> (bs,n,ns)
-        expanded_mask = expanded_mask.reshape(*expanded_a.shape[:-1])  # (bs,n,ns) -> (bs,n*ns)
+        expanded_v = v[..., None, :].repeat(
+            (1, ) * len(v.shape[:-1]) +
+            (nsamples, 1))  # (bs,n,c) -> (bs,n,1,c) -> (bs,n,ns,c)
+        expanded_v = expanded_v.reshape(
+            *expanded_a.shape[:-1], v.shape[-1])  # (bs,n,ns,c) -> (bs,n*ns,c)
+        expanded_mask = m[..., None].repeat(
+            (1, ) * len(v.shape[:-1]) + (nsamples, ))  # (bs,n) -> (bs,n,ns)
+        expanded_mask = expanded_mask.reshape(
+            *expanded_a.shape[:-1])  # (bs,n,ns) -> (bs,n*ns)
         # convert from elems to pairs
-        paired_a = self.elems2pairs(expanded_a)  # (bs,n*ns,d) -> (bs,n*ns,n*ns,d)
+        paired_a = self.elems2pairs(
+            expanded_a)  #(bs,n*ns,d) -> (bs,n*ns,n*ns,d)
         if expanded_q is not None:
             q_in = expanded_q.unsqueeze(-2).expand(*paired_a.shape[:-1], 1)
             q_out = expanded_q.unsqueeze(-3).expand(*paired_a.shape[:-1], 1)
@@ -82,10 +87,16 @@ class LieGroup(object):
 
     def expand_like(self, v, m, a):
         nsamples = a.shape[-2] // m.shape[-1]
-        expanded_v = v[..., None, :].repeat((1,)*len(v.shape[:-1]) + (nsamples, 1))  # (bs,n,c) -> (bs,n,1,c) -> (bs,n,ns,c)
-        expanded_v = expanded_v.reshape(*a.shape[:2], v.shape[-1])  # (bs,n,ns,c) -> (bs,n*ns,c)
-        expanded_mask = m[..., None].repeat((1,) * len(v.shape[:-1]) + (nsamples,))  # (bs,n) -> (bs,n,ns)
-        expanded_mask = expanded_mask.reshape(*a.shape[:2])  # (bs,n,ns) -> (bs,n*ns)
+        #print(nsamples,a.shape,v.shape)
+        expanded_v = v[..., None, :].repeat(
+            (1, ) * len(v.shape[:-1]) +
+            (nsamples, 1))  # (bs,n,c) -> (bs,n,1,c) -> (bs,n,ns,c)
+        expanded_v = expanded_v.reshape(
+            *a.shape[:2], v.shape[-1])  # (bs,n,ns,c) -> (bs,n*ns,c)
+        expanded_mask = m[..., None].repeat(
+            (1, ) * len(v.shape[:-1]) + (nsamples, ))  # (bs,n) -> (bs,n,ns)
+        expanded_mask = expanded_mask.reshape(
+            *a.shape[:2])  # (bs,n,ns) -> (bs,n*ns)
         return expanded_v, expanded_mask
 
     def elems2pairs(self, a):
@@ -94,7 +105,8 @@ class LieGroup(object):
         # ((bs,1,n,d) -> (bs,1,n,r,r))@((bs,n,1,d) -> (bs,n,1,r,r))
         vinv = self.exp(-a.unsqueeze(-3))
         u = self.exp(a.unsqueeze(-2))
-        return self.log(vinv@u)
+        #print(vinv.shape,u.shape)
+        return self.log(vinv @ u)
 
     def __str__(self):
         return f"{self.__class__}({self.alpha})" if self.alpha != .5 else f"{self.__class__}"
@@ -104,9 +116,7 @@ class LieGroup(object):
 
 
 def LieSubGroup(liegroup, generators):
-
     class subgroup(liegroup):
-
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.orig_dim = self.embed_dim
@@ -133,25 +143,28 @@ def LieSubGroup(liegroup, generators):
             return super().components2matrix(a_full)
 
         def matrix2components(self, A):
-            return super().matrix2components(A)[...,generators]
+            return super().matrix2components(A)[..., generators]
 
         def lifted_elems(self, pt, mask=None, nsamples=1):
-            """pt (bs,n,D) mask (bs,n), per_point specifies whether to
-            use a different group element per atom in the molecule
-            """
+            """ pt (bs,n,D) mask (bs,n), per_point specifies whether to
+                use a different group element per atom in the molecule"""
             a_full, q = super().lifted_elems(pt, mask, nsamples)
             a_sub = a_full[..., generators]
-            complement_generators = list(set(range(self.orig_dim)) - set(generators))
+            complement_generators = list(
+                set(range(self.orig_dim)) - set(generators))
             new_qs = a_full[..., complement_generators]
             q_sub = torch.cat([q, new_qs], dim=-1) if q is not None else new_qs
             return a_sub, q_sub
+
+        # def __str__(self):
+        #     return f"Subgroup({str(liegroup)},{generators})"
 
     return subgroup
 
 
 class T(LieGroup):
     def __init__(self, k):
-        """Returns the k dimensional translation group. Assumes lifting from R^k"""
+        """ Returns the k dimensional translation group. Assumes lifting from R^k"""
         super().__init__()
         self.q_dim = 0
         self.rep_dim = k  # dimension on which G acts
@@ -164,29 +177,33 @@ class T(LieGroup):
         deltas = a.unsqueeze(-2) - a.unsqueeze(-3)
         return deltas
 
+    # def distance(self,embedded_pairs):
+    #     return norm(embedded_pairs,dim=-1)
+
 
 # Helper functions for analytic exponential maps. Uses taylor expansions near x=0
 thresh = 7e-2
 
 
 def sinc(x):
-    """sin(x)/x """
+    """ sin(x)/x """
     x2 = x * x
     usetaylor = (x.abs() < thresh)
-    return torch.where(usetaylor, 1 - x2 / 6 * (1 - x2 / 20 * (1 - x2 / 42)), x.sin() / x)
+    return torch.where(usetaylor, 1 - x2 / 6 * (1 - x2 / 20 * (1 - x2 / 42)),
+                       x.sin() / x)
 
 
 def sincc(x):
-    """(1-sinc(x))/x^2"""
+    """ (1-sinc(x))/x^2"""
     x2 = x * x
     usetaylor = (x.abs() < thresh)
     return torch.where(usetaylor,
-                       1 / 6 * (1 - x2 / 20 *(1 - x2 / 42 * (1 - x2 / 72))),
-                       (x - x.sin()) / x ** 3)
+                       1 / 6 * (1 - x2 / 20 * (1 - x2 / 42 * (1 - x2 / 72))),
+                       (x - x.sin()) / x**3)
 
 
 def cosc(x):
-    """(1-cos(x))/x^2"""
+    """ (1-cos(x))/x^2"""
     x2 = x * x
     usetaylor = (x.abs() < thresh)
     return torch.where(usetaylor,
@@ -197,11 +214,12 @@ def cosc(x):
 def coscc(x):
     """  """
     x2 = x * x
-    # assert not torch.any(torch.isinf(x2)), f"infs in x2 log"
+    #assert not torch.any(torch.isinf(x2)), f"infs in x2 log"
     usetaylor = (x.abs() < thresh)
     texpand = 1 / 12 * (1 + x2 / 60 * (1 + x2 / 42 * (1 + x2 / 40)))
     costerm = (2 * (1 - x.cos())).clamp(min=1e-6)
-    full = (1 - x * x.sin() / costerm) / x ** 2  # Nans can come up here when cos = 1
+    full = (1 -
+            x * x.sin() / costerm) / x**2  #Nans can come up here when cos = 1
     output = torch.where(usetaylor, texpand, full)
     return output
 
@@ -214,7 +232,9 @@ def sinc_inv(x):
     return torch.where(usetaylor, texpand, x / x.sin())
 
 
-# Lie Groups acting on R2
+## Lie Groups acting on R2
+
+
 class SO2(LieGroup):
     embed_dim = 1
     rep_dim = 2
@@ -248,6 +268,7 @@ class SO2(LieGroup):
     def lifted_elems(self, pt, mask=None, nsamples=1):
         """ pt (bs,n,D) mask (bs,n), per_point specifies whether to
             use a different group element per atom in the molecule"""
+        #return farthest_lift(self,pt,mask,nsamples,alpha)
         # same lifts for each point right now
         bs, n, D = pt.shape[:3]  # origin = [1,0]
         assert D == 2, "Lifting from R^2 to SO(2) supported only"
@@ -259,7 +280,8 @@ class SO2(LieGroup):
         angle_pairs = abq_pairs[..., 0]
         ra = abq_pairs[..., 1]
         rb = abq_pairs[..., 2]
-        return angle_pairs.abs() * self.alpha + (1 - self.alpha) * (ra - rb).abs() / (ra + rb + 1e-3)
+        return angle_pairs.abs() * self.alpha + (1 - self.alpha) * (
+            ra - rb).abs() / (ra + rb + 1e-3)
 
 
 class RxSO2(LieGroup):
@@ -433,6 +455,7 @@ class SE2(SO2):
         d_r = norm(abq_pairs[..., 1:], dim=-1)
         return d_theta * self.alpha + (1 - self.alpha) * d_r
 
+
 ## Lie Groups acting on R3
 
 
@@ -580,16 +603,16 @@ class SE3(SO3):
         w = super().log(U[..., :3, :3])
         I = torch.eye(3, device=w.device, dtype=w.dtype)
         K = cross_matrix(w[..., :3])
-        # assert not torch.any(torch.isinf(K)), f"infs in K log {torch.isinf(K).sum()}"
+        #assert not torch.any(torch.isinf(K)), f"infs in K log {torch.isinf(K).sum()}"
 
         theta = norm(w, dim=-1)[..., None, None]  #%(2*np.pi)
-        # theta[theta>np.pi] -= 2*np.pi
-        # assert not torch.any(torch.isinf(theta)), f"infs in theta log {torch.isinf(theta).sum()}"
+        #theta[theta>np.pi] -= 2*np.pi
+        #assert not torch.any(torch.isinf(theta)), f"infs in theta log {torch.isinf(theta).sum()}"
         cosccc = coscc(theta)
-        # assert not torch.any(torch.isinf(cosccc)), f"infs in coscc log {torch.isinf(cosccc).sum()}"
+        #assert not torch.any(torch.isinf(cosccc)), f"infs in coscc log {torch.isinf(cosccc).sum()}"
         Vinv = I - K / 2 + cosccc * (K @ K)
         u = (Vinv @ U[..., :3, 3].unsqueeze(-1)).squeeze(-1)
-        # assert not torch.any(torch.isnan(u)), f"nans in u log {torch.isnan(u).sum()}, {torch.where(torch.isnan(u))}"
+        #assert not torch.any(torch.isnan(u)), f"nans in u log {torch.isnan(u).sum()}, {torch.where(torch.isnan(u))}"
         return torch.cat([w, u], dim=-1)
 
     def components2matrix(self, a):  # a: (*,3)
@@ -602,10 +625,30 @@ class SE3(SO3):
         return torch.cat([uncross_matrix(A[..., :3, :3]), A[..., :3, 3]],
                          dim=-1)
 
+    #
+    # def lifted_elems(self,pt,mask,nsamples,alpha=None):
+    #     d=self.rep_dim
+    #     # Sample stabilizer of the origin
+    #     #thetas = (torch.rand(*p.shape[:-1],num_samples).to(p.device)*2-1)*np.pi
+    #     q = torch.randn(*pt.shape[:-1],nsamples,4,device=pt.device,dtype=pt.dtype)
+    #     q /= norm(q,dim=-1).unsqueeze(-1)
+    #     theta_2 = torch.atan2(norm(q[...,1:],dim=-1),q[...,0]).unsqueeze(-1)
+    #     so3_elem = theta_2*q[...,1:]
+    #     # for _ in pt.shape[:-1]:
+    #     #     so3_elem=so3_elem.unsqueeze(0)
+    #     se3_elem = torch.cat([so3_elem,torch.zeros_like(so3_elem)],dim=-1)
+    #     R = self.exp(se3_elem)
+    #     # Get T(p)
+    #     T = torch.zeros(*pt.shape[:-1],nsamples,4,4,device=pt.device,dtype=pt.dtype)
+    #     T[...,:,:] = torch.eye(4,device=pt.device,dtype=pt.dtype)
+    #     T[...,:3,3] = pt.unsqueeze(-2)
+    #     a = self.log(T@R)
+    #     # Fold nsamples into the points
+    #     return a.reshape(*pt.shape[:-2],pt.shape[-2]*nsamples,6)
     def lifted_elems(self, pt, mask, nsamples):
         """ pt (bs,n,D) mask (bs,n), per_point specifies whether to
             use a different group element per atom in the molecule"""
-        # return farthest_lift(self,pt,mask,nsamples,alpha)
+        #return farthest_lift(self,pt,mask,nsamples,alpha)
         # same lifts for each point right now
         bs, n = pt.shape[:2]
         if self.per_point:
@@ -712,6 +755,11 @@ class Trivial(LieGroup):
         qb = p[..., None, :, :].expand(bs, n, n, d)
         q = torch.cat([qa, qb], dim=-1)
         return q, v, m
+
+    # def distance(self,abq_pairs):
+    #     qa = abq_pairs[...,:self.q_dim]
+    #     qb = abq_pairs[...,self.q_dim:]
+    #     return norm(qa-qb,dim=-1)
 
 
 class FakeSchGroup(object):
