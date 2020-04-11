@@ -1,12 +1,15 @@
+from abc import abstractmethod
 import torch
 import numpy as np
+
+from .utils import Named
 
 
 def norm(x, dim):
     return (x**2).sum(dim=dim).sqrt()
 
 
-class LieGroup(object):
+class LieGroup(object, metaclass=Named):
     rep_dim = NotImplemented  # dimension on which G acts
     embed_dim = NotImplemented  # dimension that g is embedded into
     q_dim = NotImplemented  # dimension which the quotient space X/G is embedded
@@ -14,6 +17,14 @@ class LieGroup(object):
     def __init__(self, alpha=.2):
         super().__init__()
         self.alpha = alpha
+
+    @abstractmethod
+    def components2matrix(self, a):
+        raise NotImplementedError
+
+    @abstractmethod
+    def matrix2components(self, a):
+        raise NotImplementedError
 
     def exp(self, a):
         raise NotImplementedError
@@ -762,7 +773,7 @@ class Trivial(LieGroup):
     #     return norm(qa-qb,dim=-1)
 
 
-class FakeSchGroup(object):
+class FakeSchGroup(object, metaclass=Named):
     embed_dim = 0
     rep_dim = 3
     q_dim = 1

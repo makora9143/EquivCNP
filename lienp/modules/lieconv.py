@@ -1,12 +1,26 @@
 import torch
 from torch import Tensor
 
-from ..liegroups import LieGroup, SE3
 from .pointconv import PointConv
 from .group_farthersubsample import FPSsubsample
+from ..liegroups import LieGroup, SE3
 
 
 class LieConv(PointConv):
+    """Lie Group Convolution Module
+
+    Attributes:
+        in_channels int: the number of input feature (channels)
+        out_channels int: the number of output feature (channels)
+        nbhd int: the number of neighborhood points
+        subsample: subsampling method
+        groups LieGroup: Lie Group module
+        r float: radius
+        knn bool: Using k-nn or ball-based
+        coeff float:
+        fill_fraction float:
+
+    """
     def __init__(
             self,
             in_channels: int,
@@ -20,7 +34,7 @@ class LieConv(PointConv):
             knn: bool = False,
     ):
         self.group = group
-        self.r = 2
+        self.r = 2.
         self.fill_fraction = min(fill, 1.)
         self.knn = knn
         super().__init__(
@@ -33,11 +47,18 @@ class LieConv(PointConv):
         self.coeff = 0.5
         self.fill_fraction_ema = fill
 
-    def forward(self, inputs):
-        """
+    def forward(self, inputs: Tensor):
+        """LieConv forwarding
+
+        Convolving M centroid points with nbhd points.
+
         Args:
             inputs: pairs_ab, input_values, query_indices, [(B, N, N, D), (B, N, C), (B, N)]
-        Return:
+
+        Returns:
+            subsampled_ab_pairs: (B, M, M, D)
+            convolved_wzeros: (B, M, C_out)
+            subsampled_mask: (B, M)
 
         """
         # FIXME 与えられた入力点の中から中心点をサンプリングする
@@ -52,17 +73,17 @@ class LieConv(PointConv):
                                        torch.zeros_like(convolved_values))
         return subsampled_ab_pairs, convolved_wzeros, subsampled_mask
 
-    def extract_neighborhood(self, inputs, query_indices):
-        """Extract neighborhood points of given query indices (points) from inputs
+    def extract_neighborhood(self, inputs: Tensor, query_indices: Tensor):
+        """Extract neighborhood points of sampled centroid indices (points) from inputs
 
         Args:
             inputs: [(B, N, N, D), (B, N, C_in), (B, N)]
             query_indices: (B, M)
 
-        Return:
-            nbhd_ab:
-            nbhd_values:
-            nbhd_masks:
+        Returns:
+            nbhd_ab: (B, M, nbhd, D)
+            nbhd_values: (B, M, nbhd, C_in)
+            nbhd_masks: (B, M, nbhd)
 
         """
         pairs_ab, values, masks = inputs
@@ -112,15 +133,17 @@ class LieConv(PointConv):
             self.fill_fraction_ema += 0.1 * (avg_fill - self.fill_fraction_ema)
         return nbhd_ab, nbhd_values, nbhd_masks
 
-    def point_conv(self, nbhd_ab, nbhd_values, nbhd_mask):
-        """Point Convolution of M centroids with surround nbhd points
+    def point_conv(self, nbhd_ab: Tensor, nbhd_values: Tensor, nbhd_mask: Tensor):
+        """Point Convolution.
+
+        Point Convolving M centroids with surround nbhd points.
 
         Args:
             nbhd_ab: (B, M, nbhd, D)
             nbhd_values: (B, M, nbhd, C_in)
             nbhd_mask: (B, M, nbhd)
 
-        Return:
+        Returns:
             convolved_value: (B, M, C_out)
 
         """

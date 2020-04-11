@@ -108,7 +108,7 @@ class PointConv(nn.Module):
             inputs: [coords, values, mask], [(B, N, D), (B, N, C), (B, N)]
             query_coords: (B, M, D)
 
-        Return:
+        Returns:
             [(B, M, nbhd, D), (B, M, nbhd, C), (B, M, nbhd)]
             where nbhd = min(nbhd, N)
         """
@@ -133,7 +133,7 @@ class PointConv(nn.Module):
             nbhd_value: (B, M, nbhd, Cin)
             nbhd_mask: (B, M, nbhd)
 
-        Return:
+        Returns:
             convolved_value (B, M, Cout)
         """
         B, M, nbhd, C = nbhd_values.shape

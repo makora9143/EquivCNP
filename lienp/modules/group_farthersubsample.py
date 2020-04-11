@@ -5,6 +5,7 @@ from torch import Tensor
 
 def FPSindices(dist_matrix: Tensor, n_samples: int, mask: Tensor):
     """Sampling farthest points measured by given distance matrix.
+
     # FIXME 与えられた距離行列を用いて，ランダムでn_samples個の点をクエリとしてサンプリング(座標)
 
     Args:
@@ -12,8 +13,9 @@ def FPSindices(dist_matrix: Tensor, n_samples: int, mask: Tensor):
         n_samples: int
         mask: (B, N)
 
-    Return:
+    Returns:
         centroids: (B, n_samples)
+
     """
     B, N = dist_matrix.shape[:2]
     device = dist_matrix.device
@@ -50,12 +52,19 @@ class FPSsubsample(nn.Module):
         self.cached_indices = None
         self.group = group
 
-    def forward(self, inputs, withquery=False):
-        """
+    def forward(self, inputs: Tensor, withquery: bool = False):
+        """Group distance-based farthest points sampling method
+
+        Distance is defined by each Lie group.
+
         Args:
             inputs: pairs_ab, input_values, input_mask, [(B, N, N, D), (B, N, C), (B, N)]
-        Return:
-            outputs: [(B, S, S, D), (B, S, C), (B, S), (B, S)]
+
+        Returns:
+            subsampled_ab_pairs: (B, S, S, D)
+            subsampled_values: (B, S, C)
+            subsampled_mask: (B, S)
+            query_idx (optional): (B, S)
 
         """
         ab_pairs, values, mask = inputs

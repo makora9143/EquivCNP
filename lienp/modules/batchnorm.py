@@ -7,11 +7,14 @@ class MaskBatchNormNd(nn.BatchNorm1d):
     """
     def forward(self, inputs):
         """Computing statistics averaging over * within the mask
+
         Args:
             inputs: [(*, D), (*, C), (*, )]
 
-        Return:
-            [(*, D), (*, C), (*, )]
+        Returns:
+            coords: (*, D)
+            output: (*, C)
+            mask: (*, )
 
         """
         coords, x, mask = inputs

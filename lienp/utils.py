@@ -1,19 +1,24 @@
 import torch
-import torch.nn as nn
 
 
-EPS = 1e8
+class Named(type):
+    def __str__(self):
+        return self.__name__
+
+    def __repr__(self):
+        return self.__name__
 
 
 def square_distance(src, target):
     """Calculate Euclid Distancve between two points: src and dst.
 
     Args:
-        src: source points, [B, N, D]
-        target: target points, [B, M, D]
+        src: source points, (B, N, D)
+        target: target points, (B, M, D)
 
-    Return:
-        dist: per-point square distance, [B, N, M]
+    Returns:
+        dist: per-point square distance, (B, N, M)
+
     """
     if src.shape[1] == 1 or target.shape[1] == 1:
         return (src - target).pow(2).sum(-1)
@@ -29,11 +34,12 @@ def index_points(points, idx):
     """Get points［idx]
 
     Args:
-        points: input point-cloud data, [B, N, D]
-        idx: sampled data index, [B, S]
+        points: input point-cloud data, (B, N, D)
+        idx: sampled data index, (B, S)
 
-    Return:
-        new_points: indexed_points data, [B, S, D]
+    Returns:
+        new_points: indexed_points data, (B, S, D)
+
     """
     device = points.device
     B = points.size(0)
@@ -50,16 +56,17 @@ def farthest_point_sample(points, n_sample, distance=square_distance):
     """Sampling farthest points from random point
 
     Args:
-        points: point-cloud data index, [B, N, D]
+        points: point-cloud data index, (B, N, D)
         n_sample: number of samples
 
-    Return:
-        centroids: sampled point-cloud data index, [B, n_sample]
+    Returns:
+        centroids: sampled point-cloud data index, (B, n_sample)
+
     """
     B, N, D = points.shape
     device = points.device
     centroids = torch.zeros(B, n_sample).long().to(device)
-    distances = torch.ones(B, N).to(device) * EPS
+    distances = torch.ones(B, N).to(device) * 1e8
 
     # FIXME 各バッチのN個の点の中からランダムで一つ選ぶ
     farthest_indices = torch.randint(low=0, high=N, size=(B,)).to(device)
@@ -76,21 +83,20 @@ def farthest_point_sample(points, n_sample, distance=square_distance):
 
 
 def knn_points(nbhd: int, all_coords, query_coords, mask, distance=square_distance):
-    """point-cloud k-nearest neighborhood
+    """Point-cloud k-nearest neighborhood
 
     Args:
         nbhd: max sample number in local region
-        coords: all data in Batch [B, N, D]
-        query_coords: query data in Batch [B, M, D]
-        mask: valid mask [B, N]
+        coords: all data in Batch (B, N, D)
+        query_coords: query data in Batch (B, M, D)
+        mask: valid mask (B, N)
 
-    Return:
+    Returns:
         # FIXME 各バッチBにおいて，M個の中心点に対してnbhd個の近傍
-        group_idx, [B, M, nbhd]
+        group_idx, (B, M, nbhd)
+
     """
     dist = distance(query_coords.unsqueeze(-2), all_coords.unsqueeze(-3))  # [B, M, N]
     dist[~mask[:, None, :].expand(*dist.shape)] = 1e8
     _, group_idx = torch.topk(dist, nbhd, dim=-1, largest=False, sorted=False)
     return group_idx
-
-
