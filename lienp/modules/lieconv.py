@@ -96,7 +96,7 @@ class LieConv(PointConv):
             nbhd: int = 32,
             coords_dim: int = 3,
             sampling_fraction: float = 1,
-            group: LieGroup = SE3,
+            group: LieGroup = SE3(),
             fill: float = 1 / 3,
             cache: bool = False,
             knn: bool = False,
@@ -113,7 +113,7 @@ class LieConv(PointConv):
         )
         self.subsample = FPSsubsample(sampling_fraction, cache=cache, group=self.group)
         self.coeff = 0.5
-        self.fill_frac_ema = fill
+        self.fill_fraction_ema = fill
 
     def forward(self, inputs):
         """
@@ -124,3 +124,104 @@ class LieConv(PointConv):
         """
         # FIXME 与えられた入力点の中から中心点をサンプリングする
         subsampled_ab_pairs, subsampled_values, subsampled_mask, query_indices = self.subsample(inputs, withquery=True)
+        # FIXME サンプリングされた中心点の近傍を見つけ
+        nbhd_ab_pairs, nbhd_values, nbhd_mask = self.extract_neighborhood(inputs, query_indices)
+        # FIXME クエリ(中心点)とその近傍点で畳み込み
+        convolved_values = self.point_conv(nbhd_ab_pairs, nbhd_values, nbhd_mask)
+        # FIXME 局所以外の値はゼロにする
+        convolved_wzeros = torch.where(subsampled_mask.unsqueeze(-1),
+                                       convolved_values,
+                                       torch.zeros_like(convolved_values))
+        return subsampled_ab_pairs, convolved_wzeros, subsampled_mask
+
+    def extract_neighborhood(self, inputs, query_indices):
+        """Extract neighborhood points of given query indices (points) from inputs
+
+        Args:
+            inputs: [(B, N, N, D), (B, N, C_in), (B, N)]
+            query_indices: (B, M)
+
+        Return:
+            nbhd_ab:
+            nbhd_values:
+            nbhd_masks:
+
+        """
+        pairs_ab, values, masks = inputs
+        if query_indices is not None:
+            B = torch.arange(values.size(0)).long().to(values.device)[:, None]
+            ab_at_query = pairs_ab[B, query_indices]  # (B, M, N, D)
+            masks_at_query = masks[B, query_indices]  # (B, M)
+        else:
+            ab_at_query = pairs_ab  # (B, N, N, D)
+            masks_at_query = masks  # (B, N)
+        values_at_query = values  # (B, N, C_in)
+        dists = self.group.distance(ab_at_query)  # (B, M, N)
+        # FIXME マスクあるところだけ，実際の距離，それ以外は1e8
+        dists = torch.where(
+            masks[:, None, :].expand(*dists.shape),
+            dists,
+            1e8 * torch.ones_like(dists)
+        )
+
+        # FIXME N個の点から選ぶ数
+        k = min(self.nbhd, values.size(1))
+        batch_size, query_size, N = dists.shape
+        if self.knn:  # Euclid distance k-NN
+            nbhd_idx = torch.topk(dists, k, dim=-1, largest=False, sorted=False)[1]  # (B, M, nbhd)
+            valid_within_ball = (nbhd_idx > -1) & masks[:, None, :] & masks_at_query[:, :, None]
+            assert not torch.any(
+                nbhd_idx > dists.shape[-1]
+            ), f"error with topk, nbhd{k} nans|inf{torch.any(torch.isnan(dists)|torch.isinf(dists))}"
+        else:  # distance ball
+            within_ball = (dists < self.r) & masks[:, None, :] & masks_at_query[:, :, None]  # (B, M, N)
+            B = torch.arange(batch_size)[:, None, None]  # (B, 1, 1)
+            M = torch.arange(query_size)[None, :, None]  # (1, M, 1)
+
+            noise = within_ball.new_empty(batch_size, query_size, N).float().uniform_(0, 1)
+            valid_within_ball, nbhd_idx = torch.topk(within_ball + noise, k, dim=-1, largest=True, sorted=False)  # (B, M, nbhd)
+            valid_within_ball = (valid_within_ball > 1)
+
+        B = torch.arange(values.size(0)).long().to(values.device)[:, None, None].expand(*nbhd_idx.shape)  # (B, 1, 1) -> expand -> (B, M, nbhd)
+        M = torch.arange(ab_at_query.size(1)).long().to(values.device)[None, :, None].expand(*nbhd_idx.shape)  # (1, M, 1) -> expand -> (B, M, nbhd)
+        nbhd_ab = ab_at_query[B, M, nbhd_idx]  # (B, M, nbhd, D)
+        nbhd_values = values_at_query[B, nbhd_idx]  # (B, M, nbhd, C_in)
+        nbhd_masks = masks[B, nbhd_idx]  # (B, M, nbhd)
+        navg = (within_ball.float()).sum(-1).sum() / masks_at_query[:, :, None].sum()
+        if self.training:
+            avg_fill = (navg / masks.sum(-1).float().mean()).cpu().item()
+            self.r += self.coeff * (self.fill_fraction - avg_fill)
+            self.fill_fraction_ema += 0.1 * (avg_fill - self.fill_fraction_ema)
+        return nbhd_ab, nbhd_values, nbhd_masks
+
+    def point_conv(self, nbhd_ab, nbhd_values, nbhd_mask):
+        """Point Convolution of M centroids with surround nbhd points
+
+        Args:
+            nbhd_ab: (B, M, nbhd, D)
+            nbhd_values: (B, M, nbhd, C_in)
+            nbhd_mask: (B, M, nbhd)
+
+        Return:
+            convolved_value: (B, M, C_out)
+
+        """
+        B, M, nbhd, C_in = nbhd_values.shape
+        _, penultimate_kernel_weights, _ = self.weightnet(
+            (None, nbhd_ab, nbhd_mask)
+        )
+        masked_penultimate_kernel_weights = torch.where(
+            nbhd_mask.unsqueeze(-1),
+            penultimate_kernel_weights,
+            torch.zeros_like(penultimate_kernel_weights)
+        )
+        masked_nbhd_values = torch.where(
+            nbhd_mask.unsqueeze(-1),
+            nbhd_values,
+            torch.zeros_like(nbhd_values)
+        )
+        partial_convolved_values = masked_nbhd_values.transpose(-1, -2).matmul(masked_penultimate_kernel_weights).reshape(B, M, -1)
+        convolved_values = self.linear(partial_convolved_values)
+        if self.mean:
+            convolved_values /= nbhd_mask.sum(-1, keepdim=True).clamp(min=1)
+        return convolved_values
