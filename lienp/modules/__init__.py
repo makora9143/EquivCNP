@@ -1,11 +1,11 @@
 from .batchnorm import MaskBatchNormNd
 from .swish import Swish
-from .farthersubsample import FartherSubsample
+from .euclid_farthersubsample import EuclidFartherSubsample
 from .apply import Apply
 
 __all__ = [
     "MaskBatchNormNd",
     "Swish",
-    "FartherSubsample",
+    "EuclidFartherSubsample",
     "Apply",
 ]

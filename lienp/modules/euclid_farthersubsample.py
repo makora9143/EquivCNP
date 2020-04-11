@@ -3,7 +3,7 @@ import torch.nn as nn
 from ..utils import farthest_point_sample, index_points, square_distance
 
 
-class FartherSubsample(nn.Module):
+class EuclidFartherSubsample(nn.Module):
     """Module of Farther Subsampling Points
     """
     def __init__(self, sampling_fracion=0.5, knn_channels=None, distance=square_distance):

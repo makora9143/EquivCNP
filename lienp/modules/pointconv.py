@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch import Tensor
 
 
-from . import Swish, MaskBatchNormNd, Apply, FartherSubsample
+from . import Swish, MaskBatchNormNd, Apply, EuclidFartherSubsample
 from ..utils import knn_points, index_points
 
 
@@ -83,7 +83,7 @@ class PointConv(nn.Module):
         self.weightnet = WeightNet(coords_dim, self.cmco_ci, act=act, bn=bn)
         self.linear = nn.Linear(self.cmco_ci * in_channels, out_channels)
         self.mean = mean
-        self.subsample = FartherSubsample(sampling_fraction, knn_channels=knn_channels)
+        self.subsample = EuclidFartherSubsample(sampling_fraction, knn_channels=knn_channels)
 
     def forward(self, inputs: Tuple[Tensor, Tensor, Tensor]):
         query_coords, query_values, query_mask = self.subsample(inputs)
