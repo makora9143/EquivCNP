@@ -21,6 +21,9 @@ class RotationMNIST(VisionDataset):
     test_file = 'test.pt'
     classes = ['0 - zero', '1 - one', '2 - two', '3 - three', '4 - four',
                '5 - five', '6 - six', '7 - seven', '8 - eight', '9 - nine']
+    width = 28
+    height = 28
+    channel = 1
 
     def __init__(self,
                  root,

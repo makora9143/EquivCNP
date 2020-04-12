@@ -435,14 +435,10 @@ class SE2(SO2):
         return a
 
     def lifted_elems(self, pt, mask=None, nsamples=1):
-        #TODO: correctly handle masking, unnecessary for image data
         d = self.rep_dim
         # Sample stabilizer of the origin
-        #thetas = (torch.rand(*p.shape[:-1],num_samples).to(p.device)*2-1)*np.pi
-        #thetas = torch.randn(nsamples)*2*np.pi - np.pi
         thetas = torch.linspace(-np.pi, np.pi, nsamples + 1)[1:]
-        for _ in pt.shape[:
-                          -1]:  # uniform on circle, but -pi and pi ar the same
+        for _ in pt.shape[:-1]:  # uniform on circle, but -pi and pi ar the same
             thetas = thetas.unsqueeze(0)
         R = torch.zeros(*pt.shape[:-1], nsamples, d, d).to(pt.device)
         sin, cos = thetas.sin(), thetas.cos()

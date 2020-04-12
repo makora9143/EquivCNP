@@ -127,7 +127,7 @@ class LieConv(PointConv):
         nbhd_values = values_at_query[B, nbhd_idx]  # (B, M, nbhd, C_in)
         nbhd_masks = masks[B, nbhd_idx]  # (B, M, nbhd)
         navg = (within_ball.float()).sum(-1).sum() / masks_at_query[:, :, None].sum()
-        if self.training:
+        if self.training:  # Downsampling
             avg_fill = (navg / masks.sum(-1).float().mean()).cpu().item()
             self.r += self.coeff * (self.fill_fraction - avg_fill)
             self.fill_fraction_ema += 0.1 * (avg_fill - self.fill_fraction_ema)
