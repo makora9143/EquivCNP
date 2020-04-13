@@ -4,6 +4,7 @@ from .euclid_farthersubsample import EuclidFartherSubsample
 from .apply import Apply
 from .pointconv import PointConv
 from .lieconv import LieConv
+from .power_function import PowerFunction
 
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "Apply",
     "PointConv",
     "LieConv",
+    "PowerFunction",
 ]

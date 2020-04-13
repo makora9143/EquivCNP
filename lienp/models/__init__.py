@@ -1,8 +1,10 @@
-from .np import ConditionalNeuralProcess
-from .lienp import LieNeuralProcess
+from .cnp import CNP
+from .convcnp import ConvCNP
+from .liecnp import LieCNP
 
 
 __all__ = [
-    "ConditionalNeuralProcess",
-    "LieNeuralProcess",
+    "CNP",
+    "ConvCNP",
+    "LieCNP",
 ]

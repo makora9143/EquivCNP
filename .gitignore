@@ -146,5 +146,7 @@ dmypy.json
 ### VisualStudioCode Patch ###
 # Ignore all local history of files
 .history
+outputs/
+settings.json
 
 # End of https://www.gitignore.io/api/git,python,jupyternotebooks,visualstudiocode

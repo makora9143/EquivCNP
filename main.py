@@ -14,7 +14,7 @@ from fastprogress import master_bar, progress_bar
 
 from lienp.datasets import MetaImageDataset
 from lienp.datasets import RotationMNIST
-from lienp.models import ConditionalNeuralProcess
+from lienp.models import CNP
 from lienp.models import LieNeuralProcess
 
 
@@ -99,7 +99,7 @@ def main(cfg: DictConfig) -> None:
     trainloader = train_dataloader(cfg)
     testloader = test_dataloader(cfg)
 
-    model = ConditionalNeuralProcess(x_dim=2, y_dim=1)
+    model = CNP(x_dim=2, y_dim=1)
     optimizer = optim.Adam(model.parameters(), lr=cfg.learning_rate)
 
     criterion = None

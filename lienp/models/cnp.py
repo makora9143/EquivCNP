@@ -6,7 +6,7 @@ from torch import Tensor
 from torch.distributions import MultivariateNormal
 
 
-class ConditionalNeuralProcess(nn.Module):
+class CNP(nn.Module):
     """Vanilla Conditional Neural Process
 
     Attributes:
