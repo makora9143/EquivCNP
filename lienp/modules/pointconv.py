@@ -102,7 +102,6 @@ class PointConv(nn.Module):
             query_coords: Tensor
     ):
         """Extract neighborhood
-        # FIXME 各バッチBにおいて，N個の中から，M
 
         Args:
             inputs: [coords, values, mask], [(B, N, D), (B, N, C), (B, N)]
@@ -111,6 +110,7 @@ class PointConv(nn.Module):
         Returns:
             [(B, M, nbhd, D), (B, M, nbhd, C), (B, M, nbhd)]
             where nbhd = min(nbhd, N)
+
         """
         coords, values, mask = inputs
         neighbor_indices = knn_points(min(self.nbhd, coords.size(1)),

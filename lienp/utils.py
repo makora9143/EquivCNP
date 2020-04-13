@@ -1,4 +1,5 @@
 import torch
+import matplotlib.pyplot as plt
 
 
 class Named(type):
@@ -100,3 +101,18 @@ def knn_points(nbhd: int, all_coords, query_coords, mask, distance=square_distan
     dist[~mask[:, None, :].expand(*dist.shape)] = 1e8
     _, group_idx = torch.topk(dist, nbhd, dim=-1, largest=False, sorted=False)
     return group_idx
+
+
+def mnist_plot_function(target_x, target_y, context_x, context_y):
+    img = torch.zeros((28, 28, 3))
+    img[:, :, 2] = torch.ones((28, 28))
+    idx = (context_x + 14).clamp(0, 27).long()
+    img[idx[:, 0], idx[:, 1]] = context_y
+    print(f'num context:{context_x.shape[0]}')
+    plt.figure(figsize=(8, 4))
+    plt.subplot(121)
+    plt.imshow(img.numpy())
+    plt.gray()
+    plt.subplot(122)
+    plt.imshow(target_y.reshape(28, 28).numpy())
+    plt.show()

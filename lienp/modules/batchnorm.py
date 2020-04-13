@@ -28,12 +28,10 @@ class MaskBatchNormNd(nn.BatchNorm1d):
             sumvar = xxsum - xsum * xmean
             unbias_var = sumvar / (numel_notnan - 1)
             bias_var = sumvar / numel_notnan
-            self.running_mean = (
-                (1 - self.momentum) * self.running_mean
-                + self.momentum * xmean.detach())
-            self.running_var = (
-                (1 - self.momentum) * self.running_var
-                + self.momentum * unbias_var.detach())
+            self.running_mean = ((1 - self.momentum) * self.running_mean +
+                                 self.momentum * xmean.detach())
+            self.running_var = ((1 - self.momentum) * self.running_var +
+                                self.momentum * unbias_var.detach())
         else:
             xmean, bias_var = self.running_mean, self.running_var
         std = bias_var.clamp(self.eps) ** 0.5

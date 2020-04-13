@@ -1,3 +1,4 @@
+from typing import Tuple
 import torch
 from torch import Tensor
 
@@ -32,7 +33,7 @@ class LieConv(PointConv):
             fill: float = 1 / 3,
             cache: bool = False,
             knn: bool = False,
-    ):
+    ) -> None:
         self.group = group
         self.r = 2.
         self.fill_fraction = min(fill, 1.)
@@ -47,7 +48,7 @@ class LieConv(PointConv):
         self.coeff = 0.5
         self.fill_fraction_ema = fill
 
-    def forward(self, inputs: Tensor):
+    def forward(self, inputs: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         """LieConv forwarding
 
         Convolving M centroid points with nbhd points.
@@ -73,7 +74,7 @@ class LieConv(PointConv):
                                        torch.zeros_like(convolved_values))
         return subsampled_ab_pairs, convolved_wzeros, subsampled_mask
 
-    def extract_neighborhood(self, inputs: Tensor, query_indices: Tensor):
+    def extract_neighborhood(self, inputs: Tensor, query_indices: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         """Extract neighborhood points of sampled centroid indices (points) from inputs
 
         Args:
@@ -133,7 +134,7 @@ class LieConv(PointConv):
             self.fill_fraction_ema += 0.1 * (avg_fill - self.fill_fraction_ema)
         return nbhd_ab, nbhd_values, nbhd_masks
 
-    def point_conv(self, nbhd_ab: Tensor, nbhd_values: Tensor, nbhd_mask: Tensor):
+    def point_conv(self, nbhd_ab: Tensor, nbhd_values: Tensor, nbhd_mask: Tensor) -> Tensor:
         """Point Convolution.
 
         Point Convolving M centroids with surround nbhd points.
