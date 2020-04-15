@@ -4,8 +4,6 @@ from PIL import Image
 import numpy as np
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torchvision.datasets.utils import download_and_extract_archive, makedir_exist_ok
 from torchvision.datasets.vision import VisionDataset
 
@@ -127,28 +125,3 @@ class RotationMNIST(VisionDataset):
 
     def extra_repr(self):
         return "Split: {}".format("Train" if self.train is True else "Test")
-
-    def default_aug_layers(self):
-        return RandomRotateTranslate(0)  # no translation
-
-
-class RandomRotateTranslate(nn.Module):
-    def __init__(self, max_trans=2):
-        super().__init__()
-        self.max_trans = max_trans
-
-    def forward(self, img):
-        if not self.training:
-            return img
-        bs, _, h, w = img.shape
-        angles = torch.rand(bs) * 2 * np.pi
-        affineMatrices = torch.zeros(bs, 2, 3)
-        affineMatrices[:, 0, 0] = angles.cos()
-        affineMatrices[:, 1, 1] = angles.cos()
-        affineMatrices[:, 0, 1] = angles.sin()
-        affineMatrices[:, 1, 0] = -angles.sin()
-        affineMatrices[:, 0, 2] = (2 * torch.rand(bs) - 1) * self.max_trans / w
-        affineMatrices[:, 1, 2] = (2 * torch.rand(bs) - 1) * self.max_trans / h
-        flowgrid = F.affine_grid(affineMatrices.to(img.device), size=img.shape)
-        transformed_img = F.grid_sample(img, flowgrid)
-        return transformed_img

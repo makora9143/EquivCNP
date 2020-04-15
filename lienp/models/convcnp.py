@@ -1,4 +1,6 @@
+from typing import Tuple
 import torch
+from torch import Tensor
 from torch import nn
 from torch.distributions import MultivariateNormal
 
@@ -18,7 +20,7 @@ class ConvCNP(nn.Module):
         self.phi = PowerFunction(K=1)
 
         self.cnn = nn.Sequential(
-            nn.Conv1d(3, 16, 5, 1, 2),
+            nn.Conv1d(4, 16, 5, 1, 2),
             nn.ReLU(),
             nn.Conv1d(16, 32, 5, 1, 2),
             nn.ReLU(),
@@ -35,12 +37,13 @@ class ConvCNP(nn.Module):
 
         self.pos = nn.Softplus()
         self.psi_rho = ScaleKernel(RBFKernel())
+        i = torch.linspace(-28/2., 28/2., 28)
+        j = torch.linspace(-28/2., 28/2., 28)
+        self.t = torch.stack(torch.meshgrid([i, j]), dim=-1).float().reshape(1, -1, 2)
 
-    def forward(self, xc: torch.Tensor, yc: torch.Tensor, xt: torch.Tensor):
-        tmp = torch.cat([xc, xt], 1)
-        lower, upper = tmp.min(), tmp.max()
-        num_t = int((self.density * (upper - lower)).item())
-        t = torch.linspace(start=lower, end=upper, steps=num_t).reshape(1, -1, 1).repeat(xc.size(0), 1, 1).to(xc.device)
+    def forward(self, batch_ctx: Tuple[Tensor, Tensor, Tensor], xt: Tensor):
+        xc, yc, _ = batch_ctx
+        t = self.t.repeat(xc.size(0), 1, 1).to(xc.device)
 
         h = self.psi(t, xc).matmul(self.phi(yc))
         h0, h1 = h.split(1, -1)
@@ -51,7 +54,6 @@ class ConvCNP(nn.Module):
         f = self.cnn(rep).transpose(-1, -2)
         f_mu, f_sigma = f.split(1, -1)
 
-        mu = self.psi_rho(xt, t).matmul(f_mu)
-
-        sigma = self.psi_rho(xt, t).matmul(self.pos(f_sigma))
+        mu = self.psi_rho(xt, t).matmul(f_mu).squeeze(-1)
+        sigma = self.psi_rho(xt, t).matmul(self.pos(f_sigma)).squeeze(-1)
         return MultivariateNormal(mu, scale_tril=sigma.diag_embed())

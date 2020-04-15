@@ -1,6 +1,8 @@
 import torch
 import matplotlib.pyplot as plt
 
+from torchvision.utils import make_grid
+
 
 class Named(type):
     def __str__(self):
@@ -116,3 +118,43 @@ def mnist_plot_function(target_x, target_y, context_x, context_y):
     plt.subplot(122)
     plt.imshow(target_y.reshape(28, 28).numpy())
     plt.show()
+
+
+class Metric(object):
+    def __init__(self):
+        self.total = 0
+        self.trials = 0
+
+    def log(self, score, trial):
+        self.total += score * trial
+        self.trials += trial
+
+    @property
+    def average(self):
+        return self.total / self.trials
+
+
+def plot_and_save_image(ctxs, tgts, preds, epoch=None):
+    ctx_img = []
+    tgt_img = []
+    pred_img = []
+    for ctx, tgt, tgt_y_dist in zip(ctxs, tgts, preds):
+        ctx_coords, ctx_values, _ = ctx
+        tgt_coords, tgt_values, _ = tgt
+
+        img = torch.zeros((28, 28, 3))
+        img[:, :, 2] = torch.ones((28, 28))
+        idx = (ctx_coords[0] + 14).clamp(0, 27).long()
+        img[idx[:, 0], idx[:, 1]] = ctx_values[0]
+        ctx_img.append(img.unsqueeze(0))
+        tgt_img.append(tgt_values.reshape(1, 1, 28, 28).repeat(1, 3, 1, 1))
+        pred_img.append(tgt_y_dist.mean.reshape(1, 1, 28, 28).repeat(1, 3, 1, 1))
+
+    ctx_img = torch.cat(ctx_img, 0).permute(0, 3, 1, 2).unsqueeze(1).to(torch.device('cpu'))
+    tgt_img = torch.cat(tgt_img, 0).unsqueeze(1).to(torch.device('cpu'))
+    pred_img = torch.cat(pred_img, 0).unsqueeze(1).to(torch.device('cpu'))
+
+    img = torch.cat([ctx_img, tgt_img, pred_img], 1).reshape(-1, 3, 28, 28)
+    img = make_grid(img, nrow=6).permute(1, 2, 0).clamp(0, 1)
+
+    plt.imsave("epoch_{}.png".format(epoch if epoch is not None else "test"), img.numpy())

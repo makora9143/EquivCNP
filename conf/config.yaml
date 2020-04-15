@@ -1,6 +1,9 @@
 defaults:
   - hyper_parameters
 
+  - hydra/job_logging: colorlog
+  - hydra/hydra_logging: colorlog
+
 hydra:
   run:
     dir: ./outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
