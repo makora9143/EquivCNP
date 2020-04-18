@@ -11,7 +11,7 @@ from ..modules import PowerFunction
 
 
 class ConvCNP(nn.Module):
-    def __init__(self, x_dim, y_dim, z_dim=128):
+    def __init__(self, x_dim, y_dim):
         super().__init__()
 
         self.density = 16
@@ -37,9 +37,8 @@ class ConvCNP(nn.Module):
 
         self.pos = nn.Softplus()
         self.psi_rho = ScaleKernel(RBFKernel())
-        i = torch.linspace(-28/2., 28/2., 28)
-        j = torch.linspace(-28/2., 28/2., 28)
-        self.t = torch.stack(torch.meshgrid([i, j]), dim=-1).float().reshape(1, -1, 2)
+        i = torch.linspace(-28 / 2., 28 / 2., 28)
+        self.t = torch.stack(torch.meshgrid([i, i]), dim=-1).float().reshape(1, -1, 2)
 
     def forward(self, batch_ctx: Tuple[Tensor, Tensor, Tensor], xt: Tensor):
         xc, yc, _ = batch_ctx
@@ -51,8 +50,7 @@ class ConvCNP(nn.Module):
         h = torch.cat([h0, h1], -1)
 
         rep = torch.cat([t, h], -1).transpose(-1, -2)
-        f = self.cnn(rep).transpose(-1, -2)
-        f_mu, f_sigma = f.split(1, -1)
+        f_mu, f_sigma = self.cnn(rep).transpose(-1, -2).split(1, -1)
 
         mu = self.psi_rho(xt, t).matmul(f_mu).squeeze(-1)
         sigma = self.psi_rho(xt, t).matmul(self.pos(f_sigma)).squeeze(-1)

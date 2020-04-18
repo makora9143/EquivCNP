@@ -1,5 +1,6 @@
 from typing import Tuple
 import torch
+from torch import nn
 from torch import Tensor
 
 from .pointconv import PointConv
@@ -29,6 +30,10 @@ class LieConv(PointConv):
             nbhd: int = 32,
             coords_dim: int = 3,
             sampling_fraction: float = 1,
+            knn_channels: int = None,
+            act: nn.Module = None,
+            bn: bool = False,
+            mean: bool = False,
             group: LieGroup = SE3(),
             fill: float = 1 / 3,
             cache: bool = False,
@@ -42,7 +47,12 @@ class LieConv(PointConv):
             in_channels=in_channels,
             out_channels=out_channels,
             nbhd=nbhd,
-            coords_dim=group.embed_dim + 2 * group.q_dim
+            coords_dim=group.embed_dim + 2 * group.q_dim,
+            sampling_fraction=sampling_fraction,
+            knn_channels=knn_channels,
+            act=act,
+            bn=bn,
+            mean=True,
         )
         self.subsample = FPSsubsample(sampling_fraction, cache=cache, group=self.group)
         self.coeff = 0.5
@@ -62,13 +72,9 @@ class LieConv(PointConv):
             subsampled_mask: (B, M)
 
         """
-        # FIXME 与えられた入力点の中から中心点をサンプリングする
         subsampled_ab_pairs, subsampled_values, subsampled_mask, query_indices = self.subsample(inputs, withquery=True)
-        # FIXME サンプリングされた中心点の近傍を見つけ
         nbhd_ab_pairs, nbhd_values, nbhd_mask = self.extract_neighborhood(inputs, query_indices)
-        # FIXME クエリ(中心点)とその近傍点で畳み込み
         convolved_values = self.point_conv(nbhd_ab_pairs, nbhd_values, nbhd_mask)
-        # FIXME 局所以外の値はゼロにする
         convolved_wzeros = torch.where(subsampled_mask.unsqueeze(-1),
                                        convolved_values,
                                        torch.zeros_like(convolved_values))
@@ -127,10 +133,10 @@ class LieConv(PointConv):
         nbhd_ab = ab_at_query[B, M, nbhd_idx]  # (B, M, nbhd, D)
         nbhd_values = values_at_query[B, nbhd_idx]  # (B, M, nbhd, C_in)
         nbhd_masks = masks[B, nbhd_idx]  # (B, M, nbhd)
-        navg = (within_ball.float()).sum(-1).sum() / masks_at_query[:, :, None].sum()
-        if self.training:  # Downsampling
-            avg_fill = (navg / masks.sum(-1).float().mean()).cpu().item()
-            self.r += self.coeff * (self.fill_fraction - avg_fill)
+        navg = (within_ball.float()).sum(-1).sum() / masks_at_query[:, :, None].sum()  # query1点あたりのボール内の平均数
+        if self.training:
+            avg_fill = (navg / masks.sum(-1).float().mean()).cpu().item()  # 全体のうちどれくらい埋まってるか
+            self.r += self.coeff * (self.fill_fraction - avg_fill)  # 想定のfill_fractionより少なければ範囲を追加，多ければ範囲を絞る
             self.fill_fraction_ema += 0.1 * (avg_fill - self.fill_fraction_ema)
         return nbhd_ab, nbhd_values, nbhd_masks
 

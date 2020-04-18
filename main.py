@@ -2,6 +2,7 @@ import logging
 
 import torch
 import torch.optim as optim
+from torch.distributions import MultivariateNormal
 from torch.utils.data import DataLoader
 
 import torchvision.transforms as tf
@@ -17,6 +18,7 @@ from lienp.datasets import RotationMNIST
 from lienp.models import CNP
 from lienp.models import LieCNP
 from lienp.models import ConvCNP
+from lienp.models import PointCNP
 from lienp.transforms import RandomRotation
 from lienp.utils import Metric, plot_and_save_image
 
@@ -41,10 +43,13 @@ def train_dataloader(cfg):
                                           train=True,
                                           download=True,
                                           transform=tf.ToTensor()),
-                                    max_total=300,
+                                    max_total=784,
                                     train=True)
     log.info(trainset)
-    trainloader = DataLoader(trainset, batch_size=cfg.batch_size, shuffle=True)
+    trainloader = DataLoader(trainset,
+                             batch_size=cfg.batch_size,
+                             shuffle=True,
+                             num_workers=4 * 4 if torch.cuda.device_count() > 1 else 0)
     return trainloader
 
 
@@ -71,6 +76,8 @@ def load_model(model_name):
         return CNP
     elif model_name == 'convcnp':
         return ConvCNP
+    elif model_name == 'pointcnp':
+        return PointCNP
     elif model_name == 'liecnp':
         return LieCNP
     else:
@@ -87,14 +94,16 @@ def train(cfg, model, dataloader, optimizer):
         batch_ctx = batch_on_device(batch_ctx, device)
         tgt_coords, tgt_values, _ = batch_on_device(batch_tgt, device)
 
-        tgt_y_dist = model(batch_ctx, tgt_coords)
+        params = model(batch_ctx, tgt_coords)
+        tgt_y_dist = MultivariateNormal(params[0], scale_tril=params[1])
+        # tgt_y_dist = model(batch_ctx, tgt_coords)
         loss = - tgt_y_dist.log_prob(tgt_values.squeeze(-1)).mean()
         loss.backward()
         optimizer.step()
         epoch_bar.child.comment = '{:.3f}'.format(loss.item())
 
         logp_meter.log(-loss.item(), tgt_coords.size(0))
-        mse_meter.log((tgt_y_dist.mean - tgt_values.squeeze(-1)).pow(2).mean(),
+        mse_meter.log((tgt_y_dist.mean - tgt_values.squeeze(-1)).pow(2).mean().item(),
                       tgt_coords.size(0))
 
     log.info("Epoch: {}, log p={:.3f}, MSE={:.4f}".format(epoch_bar.main_bar.last_v + 1,
@@ -114,7 +123,9 @@ def test(cfg, model, dataloader):
             batch_ctx = batch_on_device(batch_ctx, device)
             tgt_coords, tgt_values, _ = batch_on_device(batch_tgt, device)
 
-            tgt_y_dist = model(batch_ctx, tgt_coords)
+            # tgt_y_dist = model(batch_ctx, tgt_coords)
+            params = model(batch_ctx, tgt_coords)
+            tgt_y_dist = MultivariateNormal(params[0], scale_tril=params[1])
             loss = - tgt_y_dist.log_prob(tgt_values.squeeze(-1)).mean()
             loss_meter.log(loss.item(), 1)
 
@@ -140,6 +151,9 @@ def main(cfg: DictConfig) -> None:
     model = load_model(cfg.model)
 
     model = model(x_dim=2, y_dim=1).to(device)
+    if torch.cuda.device_count() > 1:
+        model = torch.nn.DataParallel(model)
+
     log.info(model)
     optimizer = optim.Adam(model.parameters(), lr=cfg.learning_rate)
 
