@@ -74,12 +74,12 @@ class MetaImageDataset(object):
 
         target_coords = self.coords[row_indices, col_indices]
         target_values = values.permute(1, 2, 0)[row_indices, col_indices]
-        target_masks = torch.ones(num_total).bool()
+        # target_masks = torch.ones(num_total).bool()
 
         context_indices = torch.randperm(target_coords.size(0))[:num_context]
         context_coords = target_coords[context_indices]
         context_values = target_values[context_indices]
-        context_masks = target_masks[context_indices]
-        return ((context_coords, context_values, context_masks),
-                (target_coords, target_values, target_masks))
+        # context_masks = target_masks[context_indices]
+        return ((context_coords, context_values),
+                (target_coords, target_values))
 

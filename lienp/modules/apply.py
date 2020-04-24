@@ -13,3 +13,6 @@ class Apply(nn.Module):
         xs = list(x)
         xs[self.dim] = self.module(xs[self.dim])
         return xs
+
+    def extra_repr(self):
+        return "dim={}".format(self.dim)

@@ -1,6 +1,7 @@
 from .cnp import CNP
 from .convcnp import ConvCNP
-from .liecnp import LieCNP, PointCNP
+from .pointcnp import PointCNP
+from .liecnp import LieCNP
 
 
 __all__ = [

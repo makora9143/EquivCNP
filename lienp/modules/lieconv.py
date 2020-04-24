@@ -4,7 +4,7 @@ from torch import nn
 from torch import Tensor
 
 from .pointconv import PointConv
-from .group_farthersubsample import FPSsubsample
+from .group_farthersubsample import GroupFartherSubsample
 from ..liegroups import LieGroup, SE3
 
 
@@ -27,12 +27,12 @@ class LieConv(PointConv):
             self,
             in_channels: int,
             out_channels: int,
-            nbhd: int = 32,
+            num_nbhd: int = 32,
             coords_dim: int = 3,
             sampling_fraction: float = 1,
             knn_channels: int = None,
-            act: nn.Module = None,
-            bn: bool = False,
+            activation: nn.Module = None,
+            use_bn: bool = False,
             mean: bool = False,
             group: LieGroup = SE3(),
             fill: float = 1 / 3,
@@ -46,15 +46,15 @@ class LieConv(PointConv):
         super().__init__(
             in_channels=in_channels,
             out_channels=out_channels,
-            nbhd=nbhd,
+            num_nbhd=num_nbhd,
             coords_dim=group.embed_dim + 2 * group.q_dim,
             sampling_fraction=sampling_fraction,
             knn_channels=knn_channels,
-            act=act,
-            bn=bn,
+            activation=activation,
+            use_bn=use_bn,
             mean=True,
         )
-        self.subsample = FPSsubsample(sampling_fraction, cache=cache, group=self.group)
+        self.subsample = GroupFartherSubsample(sampling_fraction, cache=cache, group=self.group)
         self.coeff = 0.5
         self.fill_fraction_ema = fill
 
@@ -111,7 +111,7 @@ class LieConv(PointConv):
         )
 
         # FIXME N個の点から選ぶ数
-        k = min(self.nbhd, values.size(1))
+        k = min(self.num_nbhd, values.size(1))
         batch_size, query_size, N = dists.shape
         if self.knn:  # Euclid distance k-NN
             nbhd_idx = torch.topk(dists, k, dim=-1, largest=False, sorted=False)[1]  # (B, M, nbhd)
@@ -138,7 +138,7 @@ class LieConv(PointConv):
             avg_fill = (navg / masks.sum(-1).float().mean()).cpu().item()  # 全体のうちどれくらい埋まってるか
             self.r += self.coeff * (self.fill_fraction - avg_fill)  # 想定のfill_fractionより少なければ範囲を追加，多ければ範囲を絞る
             self.fill_fraction_ema += 0.1 * (avg_fill - self.fill_fraction_ema)
-        return nbhd_ab, nbhd_values, nbhd_masks
+        return nbhd_ab, nbhd_values, nbhd_masks, nbhd_idx
 
     def point_conv(self, nbhd_ab: Tensor, nbhd_values: Tensor, nbhd_mask: Tensor) -> Tensor:
         """Point Convolution.

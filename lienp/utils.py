@@ -1,5 +1,10 @@
-import torch
+import io
+import PIL.Image
+
 import matplotlib.pyplot as plt
+
+import torch
+from torchvision.transforms import ToTensor, ToPILImage
 
 from torchvision.utils import make_grid
 
@@ -55,36 +60,6 @@ def index_points(points, idx):
     return new_points
 
 
-def farthest_point_sample(points, n_sample, distance=square_distance):
-    """Sampling farthest points from random point
-
-    Args:
-        points: point-cloud data index, (B, N, D)
-        n_sample: number of samples
-
-    Returns:
-        centroids: sampled point-cloud data index, (B, n_sample)
-
-    """
-    B, N, D = points.shape
-    device = points.device
-    centroids = torch.zeros(B, n_sample).long().to(device)
-    distances = torch.ones(B, N).to(device) * 1e8
-
-    # FIXME 各バッチのN個の点の中からランダムで一つ選ぶ
-    farthest_indices = torch.randint(low=0, high=N, size=(B,)).to(device)
-    batch_indices = torch.arange(B).to(device)
-    for i in range(n_sample):
-        centroids[:, i] = farthest_indices
-        centroid = points[batch_indices, farthest_indices, :].reshape(B, 1, D)
-        # FIXME 一番離れた点と各点の距離を測る
-        dist = distance(points, centroid)  # [B, N, 1]
-        mask = dist < distances
-        distances[mask] = dist[mask]
-        farthest_indices = distances.max(-1)[1]
-    return centroids
-
-
 def knn_points(nbhd: int, all_coords, query_coords, mask, distance=square_distance):
     """Point-cloud k-nearest neighborhood
 
@@ -95,7 +70,6 @@ def knn_points(nbhd: int, all_coords, query_coords, mask, distance=square_distan
         mask: valid mask (B, N)
 
     Returns:
-        # FIXME 各バッチBにおいて，M個の中心点に対してnbhd個の近傍
         group_idx, (B, M, nbhd)
 
     """
@@ -139,8 +113,8 @@ def plot_and_save_image(ctxs, tgts, preds, epoch=None):
     tgt_img = []
     pred_img = []
     for ctx, tgt, tgt_y_dist in zip(ctxs, tgts, preds):
-        ctx_coords, ctx_values, _ = ctx
-        tgt_coords, tgt_values, _ = tgt
+        ctx_coords, ctx_values = ctx
+        tgt_coords, tgt_values = tgt
 
         img = torch.zeros((28, 28, 3))
         img[:, :, 2] = torch.ones((28, 28))
@@ -158,3 +132,30 @@ def plot_and_save_image(ctxs, tgts, preds, epoch=None):
     img = make_grid(img, nrow=6).permute(1, 2, 0).clamp(0, 1)
 
     plt.imsave("epoch_{}.png".format(epoch if epoch is not None else "test"), img.numpy())
+
+
+def plot_and_save_graph(ctxs, tgts, preds, epoch=None):
+    graphs = []
+    for ctx, tgt, tgt_y_dist in zip(ctxs, tgts, preds):
+        ctx_coords, ctx_values = ctx
+        tgt_coords, tgt_values = tgt
+        mean = tgt_y_dist.mean.cpu()
+        lower, upper = tgt_y_dist.confidence_region()
+        plt.plot(tgt_coords.reshape(-1).cpu(), mean.detach().cpu().reshape(-1), color='blue')
+        plt.fill_between(tgt_coords.cpu().reshape(-1), lower.detach().cpu().reshape(-1), upper.detach().cpu().reshape(-1), alpha=0.2, color='blue')
+        plt.plot(tgt_coords.reshape(-1).cpu(), tgt_values.reshape(-1), '--', color='gray')
+        plt.plot(ctx_coords.reshape(-1).cpu(), ctx_values.reshape(-1).cpu(), 'o', color='black')
+
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        plt.clf()
+        plt.close()
+        img = PIL.Image.open(buf)
+        img = ToTensor()(img)
+        buf.close()
+
+        graphs.append(img)
+
+    img = ToPILImage()(make_grid(torch.stack(graphs, 0), nrow=2))
+    img.save("epoch_{}.png".format(epoch if epoch is not None else "test"))

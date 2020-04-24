@@ -9,49 +9,57 @@ from ..utils import knn_points, index_points
 
 
 class LinearBlock(nn.Module):
+    """Linear -> BN -> Activation (Swish / ReLU)"""
     def __init__(
             self,
             in_features: int,
             out_features: int,
-            act: nn.Module = None,
-            bn: bool = True
+            activation: nn.Module = None,
+            use_bn: bool = False
     ):
         super().__init__()
-
         self.in_features = in_features
         self.out_features = out_features
-
         self.linear = Apply(nn.Linear(in_features, out_features), dim=1)
-        self.bn = MaskBatchNormNd(self.out_features) if bn else nn.Sequential()
-        self.act = Apply(Swish() if act is None else nn.ReLU(), dim=1)
+        self.bn = MaskBatchNormNd(out_features) if use_bn else None
+        self.activation = Apply(Swish() if activation is None else nn.ReLU(), dim=1)
 
     def forward(self, x: Tensor):
         h = self.linear(x)
-        h = self.bn(h)
-        h = self.act(h)
+        if self.bn is not None:
+            h = self.bn(h)
+        h = self.activation(h)
         return h
 
 
 class WeightNet(nn.Module):
+    """Neural Network for Weight of Convolution
+
+    Args:
+        in_features (int): Number of input features
+        out_features (int): Number of output features
+        hidden_features (int): Number of hidden features
+        activation (nn.Module, optional): activation
+        use_bn (bool, optional): Whether the layer uses a batch normalization
+
+    """
     def __init__(
             self,
             in_features: int,
             out_features: int,
-            mid_features: int = 32,
-            act: nn.Module = None,
-            bn: bool = True
+            hidden_features: int = 32,
+            activation: nn.Module = None,
+            use_bn: bool = False,
     ):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.mid_features = mid_features
-        self.act = act
-        self.bn = bn
-
+        self.hidden_features = hidden_features
+        self.use_bn = use_bn
         self.net = nn.Sequential(
-            LinearBlock(in_features, mid_features, act, bn),
-            LinearBlock(mid_features, mid_features, act, bn),
-            LinearBlock(mid_features, out_features, act, bn),
+            LinearBlock(in_features, hidden_features, activation, use_bn),
+            LinearBlock(hidden_features, hidden_features, activation, use_bn),
+            LinearBlock(hidden_features, out_features, activation, use_bn),
         )
 
     def forward(self, x: Tensor):
@@ -59,30 +67,48 @@ class WeightNet(nn.Module):
 
 
 class PointConv(nn.Module):
+    """Applies a point convolution over an input signal composed of several input points.
+
+    Args:
+        in_channels (int): Number of channels (features) in the input points
+        out_channels (int): Number of channels (features) produced by the convolution
+        mid_channels (int, optional): Number of channels (features) produced by the convolution
+        num_nbhd (int, optional): Number of neighborhood points
+        coords_dim (int, optional): Dimension of the input points
+
+        activation (nn.Module, optional): activation for weight net
+        use_bn (bool, optional): Whether the weight net uses a batch normalization
+
+
+
+    """
     def __init__(
             self,
             in_channels: int,
             out_channels: int,
-            nbhd: int = 32,
+            mid_channels: int = 16,
+            num_nbhd: int = 32,
             coords_dim: int = 3,
             sampling_fraction: float = 1,
             knn_channels: int = None,
-            act: nn.Module = None,
-            bn: bool = False,
+            activation: nn.Module = None,
+            use_bn: bool = False,
             mean: bool = False
     ):
         super().__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.cmco_ci = 16
-        self.nbhd = nbhd
+        self.mid_channels = 16
+        self.num_nbhd = num_nbhd
         self.coords_dim = coords_dim
         self.sampling_fraction = sampling_fraction
         self.knn_channels = knn_channels
-        self.weightnet = WeightNet(coords_dim, self.cmco_ci, act=act, bn=bn)
-        self.linear = nn.Linear(self.cmco_ci * in_channels, out_channels)
         self.mean = mean
+
+        self.weightnet = WeightNet(coords_dim, mid_channels, activation=activation, use_bn=use_bn)
+        self.linear = nn.Linear(mid_channels * in_channels, out_channels)
+
         self.subsample = EuclidFartherSubsample(sampling_fraction, knn_channels=knn_channels)
 
     def forward(self, inputs: Tuple[Tensor, Tensor, Tensor]):
@@ -113,7 +139,7 @@ class PointConv(nn.Module):
 
         """
         coords, values, mask = inputs
-        neighbor_indices = knn_points(min(self.nbhd, coords.size(1)),
+        neighbor_indices = knn_points(min(self.num_nbhd, coords.size(1)),
                                       coords[:, :, :self.knn_channels],
                                       query_coords[:, :, :self.knn_channels],
                                       mask)  # [B, M, nbhd]
@@ -126,7 +152,7 @@ class PointConv(nn.Module):
         return output_coords - nbhd_coords
 
     def point_conv(self, embedded_group_elements: Tensor, nbhd_values: Tensor, nbhd_mask: Tensor):
-        """Point Convolution
+        """Operating point convolution
 
         Args:
             embedded_group_elements: (B, M, nbhd, D)
@@ -135,6 +161,7 @@ class PointConv(nn.Module):
 
         Returns:
             convolved_value (B, M, Cout)
+
         """
         B, M, nbhd, C = nbhd_values.shape
         _, penultimate_kernel_weights, _ = self.weightnet(
@@ -142,12 +169,14 @@ class PointConv(nn.Module):
         masked_penultimate_kernel_weights = torch.where(
             nbhd_mask.unsqueeze(-1),
             penultimate_kernel_weights,
-            torch.zeros_like(penultimate_kernel_weights))
-        masked_nbhd_values = torch.where(nbhd_mask.unsqueeze(-1), nbhd_values,
-                                         torch.zeros_like(nbhd_values))
+            torch.zeros_like(penultimate_kernel_weights).to(penultimate_kernel_weights.device))
+        masked_nbhd_values = torch.where(nbhd_mask.unsqueeze(-1),
+                                         nbhd_values,
+                                         torch.zeros_like(nbhd_values).to(nbhd_mask.device))
 
+        # (B, M, C_in, nbhd) x (B, M, nbhd, cmco_ci) => (B, M, C_in, cmco_ci)
         partial_convolved_values = masked_nbhd_values.transpose(-1, -2).matmul(masked_penultimate_kernel_weights).reshape(B, M, -1)
-        convolved_values = self.linear(partial_convolved_values)
+        convolved_values = self.linear(partial_convolved_values)  # (B, M, C_out)
         if self.mean:
             convolved_values /= nbhd_mask.sum(-1, keepdim=True).clamp(min=1)
         return convolved_values

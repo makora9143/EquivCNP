@@ -36,17 +36,6 @@ class CNP(nn.Module):
             nn.ReLU(),
             nn.Linear(128, z_dim)
         )
-        # self.decoder = nn.Sequential(
-        #     nn.Linear(x_dim + z_dim, 128),
-        #     nn.ReLU(),
-        #     nn.Linear(128, 128),
-        #     nn.ReLU(),
-        # )
-        # self.f_mu = nn.Linear(128, y_dim)
-        # self.f_sigma = nn.Sequential(
-        #     nn.Linear(128, y_dim),
-        #     nn.Softplus()
-        # )
         self.decoder = nn.Sequential(
             nn.Linear(x_dim + z_dim, 128),
             nn.ReLU(),
@@ -79,13 +68,7 @@ class CNP(nn.Module):
 
         tgt_input = torch.cat([tgt_coords, z.repeat(1, tgt_coords.size(1), 1)], dim=-1)
 
-        # h = self.decoder(tgt_input)
-        # y_mean = self.f_mu(h).squeeze(-1)
-        # y_std = self.f_sigma(h).squeeze(-1)
-        # y_dist = MultivariateNormal(y_mean, y_std.diag_embed())
-        # return y_dist
         h = self.decoder(tgt_input)
         y_mean, y_std = h.split(1, -1)
         y_std = 0.1 + 0.9 * self.softplus(y_std).squeeze(-1)
-        y_dist = MultivariateNormal(y_mean.squeeze(-1), y_std.diag_embed())
-        return y_dist
+        return y_mean.squeeze(-1), y_std.diag_embed()

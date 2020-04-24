@@ -2,8 +2,10 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+from ..liegroups import norm
 
-def FPSindices(dist_matrix: Tensor, n_samples: int, mask: Tensor):
+
+def _farthest_point_sample(dist_matrix: Tensor, n_samples: int, mask: Tensor):
     """Sampling farthest points measured by given distance matrix.
 
     # FIXME 与えられた距離行列を用いて，ランダムでn_samples個の点をクエリとしてサンプリング(座標)
@@ -44,7 +46,12 @@ def FPSindices(dist_matrix: Tensor, n_samples: int, mask: Tensor):
     return centroids
 
 
-class FPSsubsample(nn.Module):
+class GroupFartherSubsample(nn.Module):
+    """Group distance-based farthest points sampling method
+
+    Distance is defined by each Lie group.
+    """
+
     def __init__(self, sampling_fraction, cache=False, group=None):
         super().__init__()
         self.sampling_fraction = sampling_fraction
@@ -53,10 +60,7 @@ class FPSsubsample(nn.Module):
         self.group = group
 
     def forward(self, inputs: Tensor, withquery: bool = False):
-        """Group distance-based farthest points sampling method
-
-        Distance is defined by each Lie group.
-
+        """
         Args:
             inputs: pairs_ab, input_values, input_mask, [(B, N, N, D), (B, N, C), (B, N)]
 
@@ -72,11 +76,11 @@ class FPSsubsample(nn.Module):
         if self.sampling_fraction != 1:
             num_sampled_points = int(round(self.sampling_fraction * ab_pairs.size(1)))
             if self.cache and self.cached_indices is None:
-                query_idx = self.cached_indices = FPSindices(dist(ab_pairs), num_sampled_points, mask).detach()
+                query_idx = self.cached_indices = _farthest_point_sample(dist(ab_pairs), num_sampled_points, mask).detach()
             elif self.cache:
                 query_idx = self.cached_indices
             else:
-                query_idx = FPSindices(dist(ab_pairs), num_sampled_points, mask)
+                query_idx = _farthest_point_sample(dist(ab_pairs), num_sampled_points, mask)
 
             B = torch.arange(query_idx.size(0)).long().to(query_idx.device)[:, None]
             subsampled_ab_pairs = ab_pairs[B, query_idx][B, :, query_idx]
