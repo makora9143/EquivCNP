@@ -1,0 +1,7 @@
+gpytorch==v1.0.1
+matplotlib
+hydra-core
+hydra_colorlog
+fastprogress
+torchvision==v0.5
+botorch

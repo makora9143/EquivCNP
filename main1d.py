@@ -1,5 +1,6 @@
 import logging
 import warnings
+from functools import partial
 
 import torch
 import torch.optim as optim
@@ -17,6 +18,7 @@ from lienp.models import CNP
 from lienp.models import LieCNP
 from lienp.models import ConvCNP
 from lienp.models import PointCNP
+from lienp.models import OracleGP
 from lienp.utils import Metric, plot_and_save_graph
 
 
@@ -50,7 +52,7 @@ def load_model(model_name):
     elif model_name == 'convcnp':
         return ConvCNP
     elif model_name == 'pointcnp':
-        return PointCNP
+        return partial(PointCNP, nbhd=5)
     elif model_name == 'liecnp':
         return LieCNP
     else:
@@ -87,10 +89,11 @@ def test(cfg, model, dataloader):
     ctxs = []
     tgts = []
     preds = []
+    gp_preds = []
     loss_meter = Metric()
 
-    with torch.no_grad():
-        for i in range(4):
+    for i in range(4):
+        with torch.no_grad():
             batch_ctx, batch_tgt = iter(dataloader).next()
             batch_ctx = batch_on_device(batch_ctx, device)
             tgt_coords, tgt_values = batch_on_device(batch_tgt, device)
@@ -100,13 +103,18 @@ def test(cfg, model, dataloader):
             loss = - tgt_y_dist.log_prob(tgt_values.squeeze(-1)).mean()
             loss_meter.log(loss.item(), 1)
 
-            batch_ctx = batch_on_device(batch_ctx, torch.device('cpu'))
-            batch_tgt = batch_on_device(batch_tgt, torch.device('cpu'))
+        batch_ctx = batch_on_device(batch_ctx, torch.device('cpu'))
+        batch_tgt = batch_on_device(batch_tgt, torch.device('cpu'))
+
+        gp = OracleGP(batch_ctx[0], batch_ctx[1])
+        with torch.no_grad():
             ctxs.append(batch_ctx)
             tgts.append(batch_tgt)
             preds.append(tgt_y_dist)
-        epoch = epoch_bar.main_bar.last_v + 1 if epoch_bar.main_bar.last_v is not None else cfg.epochs
-        plot_and_save_graph(ctxs, tgts, preds, epoch)
+            gp_preds.append(gp(batch_tgt[0]))
+
+    epoch = epoch_bar.main_bar.last_v + 1 if epoch_bar.main_bar.last_v is not None else cfg.epochs
+    plot_and_save_graph(ctxs, tgts, preds, gp_preds, epoch)
     log.info("\tEpoch {} Test: loss={:.3f}".format(epoch,
                                                    loss_meter.average))
 

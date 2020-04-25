@@ -134,13 +134,19 @@ def plot_and_save_image(ctxs, tgts, preds, epoch=None):
     plt.imsave("epoch_{}.png".format(epoch if epoch is not None else "test"), img.numpy())
 
 
-def plot_and_save_graph(ctxs, tgts, preds, epoch=None):
+def plot_and_save_graph(ctxs, tgts, preds, gp_preds, epoch=None):
     graphs = []
-    for ctx, tgt, tgt_y_dist in zip(ctxs, tgts, preds):
+    for ctx, tgt, tgt_y_dist, gp_dist in zip(ctxs, tgts, preds, gp_preds):
         ctx_coords, ctx_values = ctx
         tgt_coords, tgt_values = tgt
         mean = tgt_y_dist.mean.cpu()
         lower, upper = tgt_y_dist.confidence_region()
+
+        gp_mean = gp_dist.mean.cpu()
+        gp_lower, gp_upper = gp_dist.confidence_region()
+        plt.plot(tgt_coords.reshape(-1).cpu(), gp_mean.detach().cpu().reshape(-1), color='green')
+        plt.fill_between(tgt_coords.cpu().reshape(-1), gp_lower.detach().cpu().reshape(-1), gp_upper.detach().cpu().reshape(-1), alpha=0.2, color='green')
+
         plt.plot(tgt_coords.reshape(-1).cpu(), mean.detach().cpu().reshape(-1), color='blue')
         plt.fill_between(tgt_coords.cpu().reshape(-1), lower.detach().cpu().reshape(-1), upper.detach().cpu().reshape(-1), alpha=0.2, color='blue')
         plt.plot(tgt_coords.reshape(-1).cpu(), tgt_values.reshape(-1), '--', color='gray')

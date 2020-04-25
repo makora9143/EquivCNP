@@ -16,7 +16,7 @@ class PointCNP(nn.Module):
         x_dim (int): input point features
         y_dim (int): output point features
     """
-    def __init__(self, x_dim, y_dim):
+    def __init__(self, x_dim, y_dim, nbhd=5):
         super().__init__()
 
         self.x_dim = x_dim
@@ -25,13 +25,13 @@ class PointCNP(nn.Module):
         self.phi = PowerFunction(K=1)
 
         self.cnn = nn.Sequential(
-            PointConv(x_dim + 2, 16, sampling_fraction=1., num_nbhd=9, coords_dim=x_dim, use_bn=True, mean=True),
+            PointConv(x_dim + 2, 16, sampling_fraction=1., num_nbhd=nbhd, coords_dim=x_dim, use_bn=True, mean=True),
             Apply(nn.ReLU(), dim=1),
-            PointConv(16, 32, sampling_fraction=1., num_nbhd=9, coords_dim=x_dim, use_bn=True, mean=True),
+            PointConv(16, 32, sampling_fraction=1., num_nbhd=nbhd, coords_dim=x_dim, use_bn=True, mean=True),
             Apply(nn.ReLU(), dim=1),
-            PointConv(32, 16, sampling_fraction=1., num_nbhd=9, coords_dim=x_dim, use_bn=True, mean=True),
+            PointConv(32, 16, sampling_fraction=1., num_nbhd=nbhd, coords_dim=x_dim, use_bn=True, mean=True),
             Apply(nn.ReLU(), dim=1),
-            PointConv(16, 2, sampling_fraction=1., num_nbhd=9, coords_dim=x_dim, use_bn=True, mean=True),
+            PointConv(16, 2, sampling_fraction=1., num_nbhd=nbhd, coords_dim=x_dim, use_bn=True, mean=True),
         )
 
         def weights_init(m):

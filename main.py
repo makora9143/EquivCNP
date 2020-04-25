@@ -1,4 +1,5 @@
 import logging
+from functools import partial
 
 import torch
 import torch.optim as optim
@@ -77,7 +78,7 @@ def load_model(model_name):
     elif model_name == 'convcnp':
         return ConvCNP
     elif model_name == 'pointcnp':
-        return PointCNP
+        return partial(PointCNP, nbhd=9)
     elif model_name == 'liecnp':
         return LieCNP
     else:

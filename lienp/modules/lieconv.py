@@ -103,14 +103,12 @@ class LieConv(PointConv):
             masks_at_query = masks  # (B, N)
         values_at_query = values  # (B, N, C_in)
         dists = self.group.distance(ab_at_query)  # (B, M, N)
-        # FIXME マスクあるところだけ，実際の距離，それ以外は1e8
         dists = torch.where(
             masks[:, None, :].expand(*dists.shape),
             dists,
             1e8 * torch.ones_like(dists)
         )
 
-        # FIXME N個の点から選ぶ数
         k = min(self.num_nbhd, values.size(1))
         batch_size, query_size, N = dists.shape
         if self.knn:  # Euclid distance k-NN
