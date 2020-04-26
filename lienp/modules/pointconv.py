@@ -65,6 +65,15 @@ class WeightNet(nn.Module):
     def forward(self, x: Tensor):
         return self.net(x)
 
+    def __repr__(self):
+        main_str = self._get_name() + '('
+
+        main_str += 'in_features={}, out_features={}, hidden_features={}, bn={}'.format(
+            self.in_features, self.out_features, self.hidden_features, self.use_bn
+        )
+        main_str += ')'
+        return main_str
+
 
 class PointConv(nn.Module):
     """Applies a point convolution over an input signal composed of several input points.
@@ -78,8 +87,6 @@ class PointConv(nn.Module):
 
         activation (nn.Module, optional): activation for weight net
         use_bn (bool, optional): Whether the weight net uses a batch normalization
-
-
 
     """
     def __init__(
@@ -106,10 +113,9 @@ class PointConv(nn.Module):
         self.knn_channels = knn_channels
         self.mean = mean
 
+        self.subsample = EuclidFartherSubsample(sampling_fraction, knn_channels=knn_channels)
         self.weightnet = WeightNet(coords_dim, mid_channels, activation=activation, use_bn=use_bn)
         self.linear = nn.Linear(mid_channels * in_channels, out_channels)
-
-        self.subsample = EuclidFartherSubsample(sampling_fraction, knn_channels=knn_channels)
 
     def forward(self, inputs: Tuple[Tensor, Tensor, Tensor]):
         query_coords, query_values, query_mask = self.subsample(inputs)
@@ -180,3 +186,12 @@ class PointConv(nn.Module):
         if self.mean:
             convolved_values /= nbhd_mask.sum(-1, keepdim=True).clamp(min=1)
         return convolved_values
+
+    def extra_repr(self):
+        line = 'C_in={}, C_out={}, C_mid={}, '.format(
+            self.in_channels, self.out_channels, self.mid_channels
+        )
+        line += 'coords_dim={}, nbhd={}, sampling_fraction={}, mean={}'.format(
+            self.coords_dim, self.num_nbhd, self.sampling_fraction, self.mean
+        )
+        return line

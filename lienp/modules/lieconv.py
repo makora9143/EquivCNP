@@ -28,7 +28,6 @@ class LieConv(PointConv):
             in_channels: int,
             out_channels: int,
             num_nbhd: int = 32,
-            coords_dim: int = 3,
             sampling_fraction: float = 1,
             knn_channels: int = None,
             activation: nn.Module = None,
@@ -52,7 +51,7 @@ class LieConv(PointConv):
             knn_channels=knn_channels,
             activation=activation,
             use_bn=use_bn,
-            mean=True,
+            mean=mean,
         )
         self.subsample = GroupFartherSubsample(sampling_fraction, cache=cache, group=self.group)
         self.coeff = 0.5
@@ -136,7 +135,7 @@ class LieConv(PointConv):
             avg_fill = (navg / masks.sum(-1).float().mean()).cpu().item()  # 全体のうちどれくらい埋まってるか
             self.r += self.coeff * (self.fill_fraction - avg_fill)  # 想定のfill_fractionより少なければ範囲を追加，多ければ範囲を絞る
             self.fill_fraction_ema += 0.1 * (avg_fill - self.fill_fraction_ema)
-        return nbhd_ab, nbhd_values, nbhd_masks, nbhd_idx
+        return nbhd_ab, nbhd_values, nbhd_masks
 
     def point_conv(self, nbhd_ab: Tensor, nbhd_values: Tensor, nbhd_mask: Tensor) -> Tensor:
         """Point Convolution.
@@ -171,3 +170,8 @@ class LieConv(PointConv):
         if self.mean:
             convolved_values /= nbhd_mask.sum(-1, keepdim=True).clamp(min=1)
         return convolved_values
+
+    def extra_repr(self):
+        line = super().extra_repr()
+        line += '\n' + 'fill={}, r={}'.format(self.fill_fraction, self.r)
+        return line

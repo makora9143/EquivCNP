@@ -19,6 +19,7 @@ from lienp.models import LieCNP
 from lienp.models import ConvCNP
 from lienp.models import PointCNP
 from lienp.models import OracleGP
+from lienp.liegroups import T
 from lienp.utils import Metric, plot_and_save_graph
 
 
@@ -54,7 +55,7 @@ def load_model(model_name):
     elif model_name == 'pointcnp':
         return partial(PointCNP, nbhd=5)
     elif model_name == 'liecnp':
-        return LieCNP
+        return partial(LieCNP, group=T(1), nbhd=5, fill=5 / 64)
     else:
         raise NotImplementedError
 

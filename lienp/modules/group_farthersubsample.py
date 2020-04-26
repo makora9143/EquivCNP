@@ -96,3 +96,6 @@ class GroupFartherSubsample(nn.Module):
         if withquery:
             return (subsampled_ab_pairs, subsampled_values, subsampled_mask, query_idx)
         return (subsampled_ab_pairs, subsampled_values, subsampled_mask)
+
+    def extra_repr(self):
+        return 'group={}'.format(self.group.__repr__())
