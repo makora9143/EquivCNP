@@ -14,10 +14,7 @@ from omegaconf import DictConfig
 from fastprogress import master_bar, progress_bar
 
 from lienp.datasets.gpcurve import RBFCurve
-from lienp.models import CNP
-from lienp.models import LieCNP
-from lienp.models import ConvCNP
-from lienp.models import PointCNP
+from lienp.models import CNP, LieCNP, ConvCNP, PointCNP
 from lienp.models import OracleGP
 from lienp.liegroups import T
 from lienp.utils import Metric, plot_and_save_graph

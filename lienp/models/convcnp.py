@@ -56,3 +56,90 @@ class ConvCNP(nn.Module):
         mu = self.psi_rho(xt, t).matmul(f_mu).squeeze(-1)
         sigma = self.psi_rho(xt, t).matmul(self.pos(f_sigma)).squeeze(-1)
         return mu, sigma.diag_embed()
+
+
+class GridConvCNP(nn.Module):
+    def __init__(self, channel=1):
+        super().__init__()
+        self.channel = channel
+
+        # convcnp S
+        # self.conv_theta = nn.Conv2d(channel, 128, 9, 1, 4)
+        # self.cnn = nn.Sequential(
+        #     nn.Conv2d(128 * 2, 128, 1, 1, 0),
+        #     ResBlock(128, 128),
+        #     ResBlock(128, 128),
+        #     ResBlock(128, 128),
+        #     ResBlock(128, 128),
+        #     nn.Conv2d(128, 2 * channel, 1, 1, 0)
+        # )
+
+        # convcnp M
+        self.conv_theta = nn.Conv2d(channel, 128, 7, 1, 3, groups=channel)
+        self.cnn = nn.Sequential(
+            nn.Conv2d(128 * 2, 128, 1, 1, 0),
+            ResBlock(128, 128, (3, 1, 1)),
+            ResBlock(128, 128, (3, 1, 1)),
+            ResBlock(128, 128, (3, 1, 1)),
+            ResBlock(128, 128, (3, 1, 1)),
+            nn.Conv2d(128, 2 * channel, 1, 1, 0)
+        )
+
+        # convcnp XL
+        # self.conv_theta = nn.Conv2d(channel, 128, 11, 1, 5, groups=channel)
+        # self.cnn = nn.Sequential(
+        #     nn.Conv2d(128 * 2, 128, 1, 1, 0),
+        #     ResBlock(128, 128, (11, 1, 5)),
+        #     ResBlock(128, 128, (11, 1, 5)),
+        #     ResBlock(128, 128, (11, 1, 5)),
+        #     ResBlock(128, 128, (11, 1, 5)),
+        #     ResBlock(128, 128, (11, 1, 5)),
+        #     ResBlock(128, 128, (11, 1, 5)),
+        #     nn.Conv2d(128, 2 * channel, 1, 1, 0)
+        # )
+
+        self.pos = nn.Softplus()
+
+    def forward(self, x):
+        density, signal = self.get_masked_image(x)
+        density_prime = self.conv_theta(density)
+        signal_prime = self.conv_theta(signal)#.div(density_prime)
+
+        h = torch.cat([density_prime, signal_prime], 1)
+        mean, std = self.cnn(h).split(self.channel, 1)
+
+        mean = mean.reshape(x.size(0), -1)
+        std = self.pos(std).reshape(x.size(0), -1)
+        return mean, std.diag_embed(), density
+
+    def get_masked_image(self, img):
+        """Get Context image and Target image
+
+        Args:
+            img (FloatTensor): image tensor (B, C, W, H)
+        """
+        B, C, W, H = img.shape
+        total_size = W * H
+        ctx_size = torch.empty(B, 1, 1, 1).uniform_(total_size / 100, total_size / 2)
+        ctx_mask = img.new_empty(B, 1, 28, 28).bernoulli_(p=ctx_size / total_size).repeat(1, C, 1, 1)
+        return ctx_mask, img * ctx_mask
+
+
+class ResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, params=(5, 1, 2)):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, *params, groups=in_channels),
+            nn.ReLU(),
+            nn.Conv2d(out_channels, out_channels, *params, groups=in_channels),
+        )
+        self.final_relu = nn.ReLU()
+
+    def forward(self, x):
+        shortcut = x
+        output = self.conv(x)
+        output = self.final_relu(output + shortcut)
+        return output

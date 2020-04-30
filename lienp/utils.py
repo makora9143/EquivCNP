@@ -134,6 +134,29 @@ def plot_and_save_image(ctxs, tgts, preds, epoch=None):
     plt.imsave("epoch_{}.png".format(epoch if epoch is not None else "test"), img.numpy())
 
 
+def plot_and_save_image2(ctxs, tgts, preds, epoch=None):
+    ctx_img = []
+    tgt_img = []
+    pred_img = []
+    for ctx_mask, tgt, tgt_y_dist in zip(ctxs, tgts, preds):
+
+        img = torch.zeros((28, 28, 3))
+        img[:, :, 2] = torch.ones((28, 28))
+        img[ctx_mask[0, 0] == 1] = tgt[0, 0][ctx_mask[0, 0] == 1].unsqueeze(-1)
+        ctx_img.append(img.unsqueeze(0))
+        tgt_img.append(tgt.repeat(1, 3, 1, 1))
+        pred_img.append(tgt_y_dist.mean.reshape(1, 1, 28, 28).repeat(1, 3, 1, 1))
+
+    ctx_img = torch.cat(ctx_img, 0).permute(0, 3, 1, 2).unsqueeze(1).to(torch.device('cpu'))
+    tgt_img = torch.cat(tgt_img, 0).unsqueeze(1).to(torch.device('cpu'))
+    pred_img = torch.cat(pred_img, 0).unsqueeze(1).to(torch.device('cpu'))
+
+    img = torch.cat([ctx_img, tgt_img, pred_img], 1).reshape(-1, 3, 28, 28)
+    img = make_grid(img, nrow=6).permute(1, 2, 0).clamp(0, 1)
+
+    plt.imsave("epoch_{}.png".format(epoch if epoch is not None else "test"), img.numpy())
+
+
 def plot_and_save_graph(ctxs, tgts, preds, gp_preds, epoch=None):
     graphs = []
     for ctx, tgt, tgt_y_dist, gp_dist in zip(ctxs, tgts, preds, gp_preds):

@@ -72,7 +72,6 @@ class LieCNP(nn.Module):
 
         mu = self.psi_rho(tgt_coords, rep_coords).matmul(f_mu).squeeze(-1)
         sigma = self.psi_rho(tgt_coords, rep_coords).matmul(self.pos(f_sigma)).squeeze(-1)
-        # return MultivariateNormal(mu, scale_tril=sigma.diag_embed())
         return mu, sigma.diag_embed()
 
     def support_points(self, ctx_coords, tgt_coords):
@@ -89,3 +88,95 @@ class LieCNP(nn.Module):
             raise NotImplementedError
         t_coords = t_coords.repeat(ctx_coords.size(0), 1, 1).to(ctx_coords.device)
         return t_coords
+
+
+class GridLieCNP(nn.Module):
+    """Grid LieGroup Convolutional Conditional Neural Process
+    """
+    def __init__(self, channel=1, group=T(2)):
+        super().__init__()
+        self.channel = channel
+        self.group = group
+
+        self.conv_theta = LieConv(channel, 128, group=group,
+                                  num_nbhd=81, sampling_fraction=1., fill=1 / 10,
+                                  use_bn=True, mean=True, cache=True)
+
+        self.cnn = nn.Sequential(
+            Apply(nn.Linear(128 * 2, 128), dim=1),
+            ResBlock(128, 128, mean=True),
+            ResBlock(128, 128, mean=True),
+            ResBlock(128, 128, mean=True),
+            ResBlock(128, 128, mean=True),
+            Apply(nn.Linear(128, 2 * channel))
+        )
+        self.pos = nn.Softplus()
+
+    def forward(self, x):
+        B, C, W, H = x.shape
+        ctx_coords, ctx_density, ctx_signal, ctx_mask = self.get_masked_image(x)
+        lifted_ctx_coords, lifted_ctx_density, lifted_ctx_mask = self.group.lift((ctx_coords, ctx_density, ctx_mask), 1)
+        lifted_ctx_signal, _ = self.group.expand_like(ctx_signal, ctx_mask, lifted_ctx_coords)
+
+        lifted_ctx_coords, density_prime, lifted_ctx_mask = self.conv_theta((lifted_ctx_coords, lifted_ctx_density, lifted_ctx_mask))
+        _, signal_prime, _ = self.conv_theta((lifted_ctx_coords, lifted_ctx_signal, lifted_ctx_mask))
+
+        ctx_h = torch.cat([density_prime, signal_prime], -1)
+        _, f, _ = self.cnn((lifted_ctx_coords, ctx_h, lifted_ctx_mask))
+        mean, std = f.split(self.channel, -1)
+
+        mean = mean.squeeze(-1)
+        std = self.pos(std).squeeze(-1)
+        return mean, std.diag_embed(), ctx_density.reshape(B, W, H, C).permute(0, 3, 1, 2)
+
+    def get_masked_image(self, img):
+        """Get Context image and Target image
+
+        Args:
+            img (FloatTensor): image tensor (B, C, W, H)
+
+        Returns:
+            ctx_coords (FloatTensor): [B, W*H, 2]
+            ctx_density (FloatTensor): [B, W*H, C]
+            ctx_signal (FloatTensor): [B, W*H, C]
+
+        """
+        B, C, W, H = img.shape
+        total_size = W * H
+        ctx_size = torch.empty(B, 1, 1, 1).uniform_(total_size / 100, total_size / 2)
+        # Broadcast to channel-axis [B, 1, W, H] -> [B，C, W, H]
+        ctx_mask = img.new_empty(B, 1, W, H).bernoulli_(p=ctx_size / total_size).repeat(1, C, 1, 1)
+        #  [B, C, W, H] -> [B, W, H, C] -> [B, W*H, C]
+        ctx_signal = (ctx_mask * img).permute(0, 2, 3, 1).reshape(B, -1, C)
+
+        ctx_coords = torch.linspace(-W / 2., W / 2., W)
+        # [B, W*H, 2]
+        ctx_coords = torch.stack(torch.meshgrid([ctx_coords, ctx_coords]), -1).reshape(1, -1, 2).repeat(B, 1, 1).to(img.device)
+        ctx_density = ctx_mask.reshape(B, -1, C)
+        ctx_mask = torch.ones(*ctx_signal.shape[:2]).bool().to(img.device)
+        return ctx_coords, ctx_density, ctx_signal, ctx_mask
+
+
+class ResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, group=T(2), mean=False):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.group = group
+
+        self.conv = nn.Sequential(
+            LieConv(in_channels, out_channels, group=group,
+                    num_nbhd=25, sampling_fraction=1., fill=1 / 15,
+                    use_bn=True, mean=mean, cache=True),
+            Apply(Swish(), dim=1),
+            LieConv(out_channels, out_channels, group=group,
+                    num_nbhd=25, sampling_fraction=1., fill=1 / 15,
+                    use_bn=True, mean=mean, cache=True),
+        )
+        self.final_relu = Swish()
+
+    def forward(self, x):
+        shortcut = x
+        coords, values, mask = self.conv(x)
+        values = self.final_relu(values + shortcut[1])
+        return coords, values, mask

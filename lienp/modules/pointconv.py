@@ -118,6 +118,11 @@ class PointConv(nn.Module):
         self.linear = nn.Linear(mid_channels * in_channels, out_channels)
 
     def forward(self, inputs: Tuple[Tensor, Tensor, Tensor]):
+        """
+        Args:
+            inputs: [coords, values, mask], [(B, N, D), (B, N, C), (B, N)]
+
+        """
         query_coords, query_values, query_mask = self.subsample(inputs)
         nbhd_coords, nbhd_values, nbhd_mask = self.extract_neighborhood(inputs, query_coords)
         # (B, M, nbhd, D) = (B, M, 1, D) - (B, M, nbhd, D)

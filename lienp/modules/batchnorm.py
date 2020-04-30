@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class MaskBatchNormNd(nn.BatchNorm1d):
-    """n-dimensional batchnorm that excludese points outside the mask from the statistics
+    """n-dimensional batchnorm that excludes points outside the mask from the statistics
     """
     def forward(self, inputs):
         """Computing statistics averaging over * within the mask

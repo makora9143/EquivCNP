@@ -57,7 +57,7 @@ class LieConv(PointConv):
         self.coeff = 0.5
         self.fill_fraction_ema = fill
 
-    def forward(self, inputs: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+    def forward(self, inputs: Tuple[Tensor, Tensor, Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
         """LieConv forwarding
 
         Convolving M centroid points with nbhd points.
@@ -173,5 +173,5 @@ class LieConv(PointConv):
 
     def extra_repr(self):
         line = super().extra_repr()
-        line += '\n' + 'fill={}, r={}'.format(self.fill_fraction, self.r)
+        line += '\n' + 'fill={:.3f}, r={:.3f}'.format(self.fill_fraction, self.r)
         return line
