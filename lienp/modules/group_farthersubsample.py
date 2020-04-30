@@ -8,8 +8,6 @@ from ..liegroups import norm
 def _farthest_point_sample(dist_matrix: Tensor, n_samples: int, mask: Tensor):
     """Sampling farthest points measured by given distance matrix.
 
-    # FIXME 与えられた距離行列を用いて，ランダムでn_samples個の点をクエリとしてサンプリング(座標)
-
     Args:
         dist_matrix: (B, N, N)
         n_samples: int

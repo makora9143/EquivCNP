@@ -17,26 +17,29 @@ from fastprogress import master_bar, progress_bar
 from lienp.datasets import RotationMNIST
 from lienp.models import GridConvCNP, GridPointCNP
 from lienp.models.liecnp import GridLieCNP
-from lienp.transforms import RandomRotation
 from lienp.utils import Metric, plot_and_save_image2
 
-#  train_translation_rotation_list = [((0,0),0),((0.075,0.075),30),((0.075,0.075),60),((0.075,0.075),90),((0.075,0.075),180)]
-#     test_translation_rotation_list = [((0,0),0),((0.075,0.075),30),((0.075,0.075),60),((0.075,0.075),90),((0.075,0.075),180)]
 
-
-def batch_on_device(batch, device=torch.device('cpu')):
-    return list(map(lambda x: x.to(device), batch))
+TRANSLATION_ROTATION_LIST = [
+    ((0, 0), 0),
+    ((0.075, 0.075), 30),
+    ((0.075, 0.075), 60),
+    ((0.075, 0.075), 90),
+    ((0.075, 0.075), 180)
+]
 
 
 def train_dataloader(cfg):
     if cfg.dataset == 'rotmnist':
-        transforms = [RandomRotation(180)] if cfg.aug else []
-        transforms.append(tf.ToTensor())
-        transforms = tf.Compose(transforms)
-        trainset = RotationMNIST("~/data/rotmnist",
-                                 train=True,
-                                 download=True,
-                                 transform=transforms),
+        translation, rotation = TRANSLATION_ROTATION_LIST[cfg.se2.train]
+        transforms = tf.Compose([
+            tf.RandomAffine(rotation, translation),
+            tf.ToTensor()
+        ])
+        trainset = MNIST("~/data/mnist",
+                         train=True,
+                         download=True,
+                         transform=transforms),
     else:
         trainset = MNIST("~/data/mnist",
                          train=True,
@@ -53,9 +56,12 @@ def train_dataloader(cfg):
 
 def test_dataloader(cfg):
     if cfg.dataset == 'rotmnist':
-        testset = RotationMNIST("~/data/rotmnist",
-                                train=False,
-                                transform=tf.ToTensor())
+        translation, rotation = TRANSLATION_ROTATION_LIST[cfg.se2.test]
+        transforms = tf.Compose([
+            tf.RandomAffine(rotation, translation),
+            tf.ToTensor()
+        ])
+        testset = MNIST("~/data/mnist", train=False, transform=transforms)
     else:
         testset = MNIST("~/data/mnist",
                         train=False,
@@ -153,12 +159,12 @@ def main(cfg: DictConfig) -> None:
     log.info(model)
     optimizer = optim.Adam(model.parameters(), lr=cfg.learning_rate)
 
-    for epoch in epoch_bar:
-        train(cfg, model, trainloader, optimizer)
+    # for epoch in epoch_bar:
+    #     train(cfg, model, trainloader, optimizer)
 
-        if epoch % 1 == 0:
-            test(cfg, model, testloader)
-    test(cfg, model, testloader)
+    #     if epoch % 1 == 0:
+    #         test(cfg, model, testloader)
+    # test(cfg, model, testloader)
 
 
 if __name__ == '__main__':

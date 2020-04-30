@@ -36,12 +36,10 @@ class LieConv(PointConv):
             group: LieGroup = SE3(),
             fill: float = 1 / 3,
             cache: bool = False,
-            knn: bool = False,
     ) -> None:
         self.group = group
         self.r = 2.
         self.fill_fraction = min(fill, 1.)
-        self.knn = knn
         super().__init__(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -110,23 +108,13 @@ class LieConv(PointConv):
 
         k = min(self.num_nbhd, values.size(1))
         batch_size, query_size, N = dists.shape
-        if self.knn:  # Euclid distance k-NN
-            nbhd_idx = torch.topk(dists, k, dim=-1, largest=False, sorted=False)[1]  # (B, M, nbhd)
-            valid_within_ball = (nbhd_idx > -1) & masks[:, None, :] & masks_at_query[:, :, None]
-            assert not torch.any(
-                nbhd_idx > dists.shape[-1]
-            ), f"error with topk, nbhd{k} nans|inf{torch.any(torch.isnan(dists)|torch.isinf(dists))}"
-        else:  # distance ball
-            within_ball = (dists < self.r) & masks[:, None, :] & masks_at_query[:, :, None]  # (B, M, N)
-            B = torch.arange(batch_size)[:, None, None]  # (B, 1, 1)
-            M = torch.arange(query_size)[None, :, None]  # (1, M, 1)
 
-            noise = within_ball.new_empty(batch_size, query_size, N).float().uniform_(0, 1)
-            valid_within_ball, nbhd_idx = torch.topk(within_ball + noise, k, dim=-1, largest=True, sorted=False)  # (B, M, nbhd)
-            valid_within_ball = (valid_within_ball > 1)
+        within_ball = (dists < self.r) & masks[:, None, :] & masks_at_query[:, :, None]  # (B, M, N)
+        noise = within_ball.new_empty(batch_size, query_size, N).float().uniform_(0, 1)
+        _, nbhd_idx = torch.topk(within_ball + noise, k, dim=-1, largest=True, sorted=False)  # (B, M, nbhd)
 
-        B = torch.arange(values.size(0)).long().to(values.device)[:, None, None].expand(*nbhd_idx.shape)  # (B, 1, 1) -> expand -> (B, M, nbhd)
-        M = torch.arange(ab_at_query.size(1)).long().to(values.device)[None, :, None].expand(*nbhd_idx.shape)  # (1, M, 1) -> expand -> (B, M, nbhd)
+        B = torch.arange(batch_size)[:, None, None].expand(*nbhd_idx.shape).to(values.device)  # (B, 1, 1) -> expand -> (B, M, nbhd)
+        M = torch.arange(query_size)[None, :, None].expand(*nbhd_idx.shape).to(values.device)  # (1, M, 1) -> expand -> (B, M, nbhd)
         nbhd_ab = ab_at_query[B, M, nbhd_idx]  # (B, M, nbhd, D)
         nbhd_values = values_at_query[B, nbhd_idx]  # (B, M, nbhd, C_in)
         nbhd_masks = masks[B, nbhd_idx]  # (B, M, nbhd)
