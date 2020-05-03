@@ -104,10 +104,10 @@ class GridLieCNP(nn.Module):
 
         self.cnn = nn.Sequential(
             Apply(nn.Linear(128 * 2, 128), dim=1),
-            ResBlock(128, 128, mean=True),
-            ResBlock(128, 128, mean=True),
-            ResBlock(128, 128, mean=True),
-            ResBlock(128, 128, mean=True),
+            ResBlock(128, 128, mean=True, group=group),
+            ResBlock(128, 128, mean=True, group=group),
+            ResBlock(128, 128, mean=True, group=group),
+            ResBlock(128, 128, mean=True, group=group),
             Apply(nn.Linear(128, 2 * channel))
         )
         self.pos = nn.Softplus()

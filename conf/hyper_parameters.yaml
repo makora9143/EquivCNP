@@ -4,3 +4,4 @@ epochs: 200
 dataset: mnist
 model: cnp
 aug: False
+group: T2

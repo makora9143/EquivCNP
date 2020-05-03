@@ -14,10 +14,10 @@ from omegaconf import DictConfig
 
 from fastprogress import master_bar, progress_bar
 
-from lienp.datasets import RotationMNIST
 from lienp.models import GridConvCNP, GridPointCNP
 from lienp.models.liecnp import GridLieCNP
 from lienp.utils import Metric, plot_and_save_image2
+from lienp.liegroups import T, SO2, RxSO2, SE2
 
 
 TRANSLATION_ROTATION_LIST = [
@@ -39,7 +39,7 @@ def train_dataloader(cfg):
         trainset = MNIST("~/data/mnist",
                          train=True,
                          download=True,
-                         transform=transforms),
+                         transform=transforms)
     else:
         trainset = MNIST("~/data/mnist",
                          train=True,
@@ -72,7 +72,8 @@ def test_dataloader(cfg):
     return testloader
 
 
-def load_model(model_name):
+def load_model(cfg):
+    model_name = cfg.model
     if model_name == 'cnp':
         return GridConvCNP
     elif model_name == 'convcnp':
@@ -80,9 +81,23 @@ def load_model(model_name):
     elif model_name == 'pointcnp':
         return GridPointCNP
     elif model_name == 'liecnp':
-        return GridLieCNP
+        group = load_group(cfg.group)
+        return partial(GridLieCNP, group=group)
     else:
         raise NotImplementedError
+
+
+def load_group(group_name):
+    if group_name == 'T2':
+        return T(2)
+    elif group_name == 'SO2':
+        return SO2(.2)
+    elif group_name == 'RxSO2':
+        return RxSO2(.2)
+    elif group_name == 'SE2':
+        return SE2(.2)
+    else:
+        raise NotImplementedError()
 
 
 def train(cfg, model, dataloader, optimizer):
@@ -150,7 +165,7 @@ def main(cfg: DictConfig) -> None:
     trainloader = train_dataloader(cfg)
     testloader = test_dataloader(cfg)
 
-    model = load_model(cfg.model)
+    model = load_model(cfg)
 
     model = model(channel=1).to(device)
     if torch.cuda.device_count() > 1:
@@ -159,12 +174,12 @@ def main(cfg: DictConfig) -> None:
     log.info(model)
     optimizer = optim.Adam(model.parameters(), lr=cfg.learning_rate)
 
-    # for epoch in epoch_bar:
-    #     train(cfg, model, trainloader, optimizer)
+    for epoch in epoch_bar:
+        train(cfg, model, trainloader, optimizer)
 
-    #     if epoch % 1 == 0:
-    #         test(cfg, model, testloader)
-    # test(cfg, model, testloader)
+        if epoch % 1 == 0:
+            test(cfg, model, testloader)
+    test(cfg, model, testloader)
 
 
 if __name__ == '__main__':
