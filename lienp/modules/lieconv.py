@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch import Tensor
 
-from .pointconv import PointConv
+from .pointconv import PointConv, DepthwisePointConv
 from .group_farthersubsample import GroupFartherSubsample
 from ..liegroups import LieGroup, SE3
 
@@ -27,6 +27,7 @@ class LieConv(PointConv):
             self,
             in_channels: int,
             out_channels: int,
+            mid_channels: int = 16,
             num_nbhd: int = 32,
             sampling_fraction: float = 1,
             knn_channels: int = None,
@@ -43,6 +44,7 @@ class LieConv(PointConv):
         super().__init__(
             in_channels=in_channels,
             out_channels=out_channels,
+            mid_channels=mid_channels,
             num_nbhd=num_nbhd,
             coords_dim=group.embed_dim + 2 * group.q_dim,
             sampling_fraction=sampling_fraction,
@@ -163,3 +165,65 @@ class LieConv(PointConv):
         line = super().extra_repr()
         line += '\n' + 'fill={:.3f}, r={:.3f}'.format(self.fill_fraction, self.r)
         return line
+
+
+class DepthwiseLieConv(LieConv):
+    def __init__(
+            self,
+            in_channels: int,
+            num_nbhd: int = 32,
+            sampling_fraction: float = 1,
+            activation: nn.Module = None,
+            use_bn: bool = False,
+            mean: bool = False,
+            group: LieGroup = SE3(),
+            fill: float = 1 / 3,
+            cache: bool = False,
+    ) -> None:
+        super().__init__(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            mid_channels=in_channels,
+            num_nbhd=num_nbhd,
+            sampling_fraction=sampling_fraction,
+            activation=activation,
+            use_bn=use_bn,
+            mean=mean,
+            group=group,
+            fill=fill,
+            cache=cache,
+        )
+        self.linear = None
+
+    def point_conv(self, nbhd_ab: Tensor, nbhd_values: Tensor, nbhd_mask: Tensor) -> Tensor:
+        """Point Convolution.
+
+        Point Convolving M centroids with surround nbhd points.
+
+        Args:
+            nbhd_ab: (B, M, nbhd, D)
+            nbhd_values: (B, M, nbhd, C_in)
+            nbhd_mask: (B, M, nbhd)
+
+        Returns:
+            convolved_value: (B, M, C_out)
+
+        """
+        B, M = nbhd_values.shape[:2]
+        _, penultimate_kernel_weights, _ = self.weightnet(
+            (None, nbhd_ab, nbhd_mask)
+        )  # (B, M, nbhd)
+        masked_penultimate_kernel_weights = torch.where(
+            nbhd_mask.unsqueeze(-1),
+            penultimate_kernel_weights,
+            torch.zeros_like(penultimate_kernel_weights)
+        )
+        masked_nbhd_values = torch.where(
+            nbhd_mask.unsqueeze(-1),
+            nbhd_values,
+            torch.zeros_like(nbhd_values)
+        )
+        convolved_values = torch.sum(masked_nbhd_values * masked_penultimate_kernel_weights, -2)
+        if self.mean:
+            convolved_values /= nbhd_mask.sum(-1, keepdim=True).clamp(min=1)
+        return convolved_values

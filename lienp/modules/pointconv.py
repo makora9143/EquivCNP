@@ -106,7 +106,7 @@ class PointConv(nn.Module):
 
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.mid_channels = 16
+        self.mid_channels = mid_channels
         self.num_nbhd = num_nbhd
         self.coords_dim = coords_dim
         self.sampling_fraction = sampling_fraction
@@ -200,3 +200,70 @@ class PointConv(nn.Module):
             self.coords_dim, self.num_nbhd, self.sampling_fraction, self.mean
         )
         return line
+
+
+class DepthwisePointConv(PointConv):
+    """Applies a point convolution over an input signal composed of several input points.
+
+    Args:
+        in_channels (int): Number of channels (features) in the input points
+        out_channels (int): Number of channels (features) produced by the convolution
+        mid_channels (int, optional): Number of channels (features) produced by the convolution
+        num_nbhd (int, optional): Number of neighborhood points
+        coords_dim (int, optional): Dimension of the input points
+
+        activation (nn.Module, optional): activation for weight net
+        use_bn (bool, optional): Whether the weight net uses a batch normalization
+
+    """
+    def __init__(
+            self,
+            in_channels: int,
+            num_nbhd: int = 32,
+            coords_dim: int = 3,
+            sampling_fraction: float = 1,
+            activation: nn.Module = None,
+            use_bn: bool = False,
+            mean: bool = False
+    ):
+        super().__init__(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            mid_channels=in_channels,
+            num_nbhd=num_nbhd,
+            coords_dim=coords_dim,
+            sampling_fraction=sampling_fraction,
+            activation=activation,
+            use_bn=use_bn,
+            mean=mean
+        )
+        self.linear = None
+
+    def point_conv(self, embedded_group_elements: Tensor, nbhd_values: Tensor, nbhd_mask: Tensor):
+        """Operating point convolution
+
+        Args:
+            embedded_group_elements: (B, M, nbhd, D)
+            nbhd_value: (B, M, nbhd, Cin)
+            nbhd_mask: (B, M, nbhd)
+
+        Returns:
+            convolved_value (B, M, Cout)
+
+        """
+        B, M, nbhd, C = nbhd_values.shape
+        _, penultimate_kernel_weights, _ = self.weightnet(
+            (None, embedded_group_elements, nbhd_mask))  # (B, M, nbhd, c_in)
+        masked_penultimate_kernel_weights = torch.where(
+            nbhd_mask.unsqueeze(-1),
+            penultimate_kernel_weights,
+            torch.zeros_like(penultimate_kernel_weights).to(penultimate_kernel_weights.device))
+        masked_nbhd_values = torch.where(nbhd_mask.unsqueeze(-1),
+                                         nbhd_values,
+                                         torch.zeros_like(nbhd_values).to(nbhd_mask.device))
+
+        # sum_nbhd (B, M, nbhd, C_in) \cdot (B, M, nbhd, c_in) => (B, M, c_in)
+        convolved_values = torch.sum(masked_nbhd_values * masked_penultimate_kernel_weights, -2)
+        if self.mean:
+            convolved_values /= nbhd_mask.sum(-1, keepdim=True).clamp(min=1)
+        return convolved_values

@@ -18,6 +18,7 @@ from lienp.models import GridConvCNP, GridPointCNP
 from lienp.models.liecnp import GridLieCNP
 from lienp.utils import Metric, plot_and_save_image2
 from lienp.liegroups import T, SO2, RxSO2, SE2
+from lienp.datasets.clockdigit import ClockDigit
 
 
 TRANSLATION_ROTATION_LIST = [
@@ -40,6 +41,13 @@ def train_dataloader(cfg):
                          train=True,
                          download=True,
                          transform=transforms)
+    elif cfg.dataset == 'clockdigit':
+        transforms = tf.Compose([
+            tf.Lambda(lambda x: tf.functional.affine(x, 0, (0, 0), 0.25, 0)),
+            tf.Pad(16),
+            tf.ToTensor()
+        ])
+        trainset = ClockDigit("~/data/clockdigits", download=True, transform=transforms)
     else:
         trainset = MNIST("~/data/mnist",
                          train=True,
@@ -62,6 +70,13 @@ def test_dataloader(cfg):
             tf.ToTensor()
         ])
         testset = MNIST("~/data/mnist", train=False, transform=transforms)
+    elif cfg.dataset == 'clockdigit':
+        transforms = tf.Compose([
+            tf.Pad(16),
+            tf.RandomAffine(degrees=180, scale=(1.5, 2.0)),
+            tf.ToTensor()
+        ])
+        testset = ClockDigit("~/data/clockdigits", download=True, transform=transforms)
     else:
         testset = MNIST("~/data/mnist",
                         train=False,
@@ -150,7 +165,7 @@ def test(cfg, model, dataloader):
             tgts.append(imgs)
             preds.append(tgt_y_dist)
         epoch = epoch_bar.main_bar.last_v + 1 if epoch_bar.main_bar.last_v is not None else cfg.epochs
-        plot_and_save_image2(ctxs, tgts, preds, epoch)
+        plot_and_save_image2(ctxs, tgts, preds, img_shape=(imgs.shape[1:]), epoch=epoch)
     log.info("\tEpoch {} Test: loss={:.3f}, MSE={:.4f}".format(
         epoch, loss_meter.average, mse_meter.average))
 
@@ -175,9 +190,10 @@ def main(cfg: DictConfig) -> None:
     optimizer = optim.Adam(model.parameters(), lr=cfg.learning_rate)
 
     for epoch in epoch_bar:
+        log.debug(model.conv_theta.fill_fraction_ema)
         train(cfg, model, trainloader, optimizer)
 
-        if epoch % 1 == 0:
+        if epoch % 10 == 0:
             test(cfg, model, testloader)
     test(cfg, model, testloader)
 

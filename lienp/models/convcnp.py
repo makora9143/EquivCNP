@@ -64,26 +64,26 @@ class GridConvCNP(nn.Module):
         self.channel = channel
 
         # convcnp S
-        # self.conv_theta = nn.Conv2d(channel, 128, 9, 1, 4)
-        # self.cnn = nn.Sequential(
-        #     nn.Conv2d(128 * 2, 128, 1, 1, 0),
-        #     ResBlock(128, 128),
-        #     ResBlock(128, 128),
-        #     ResBlock(128, 128),
-        #     ResBlock(128, 128),
-        #     nn.Conv2d(128, 2 * channel, 1, 1, 0)
-        # )
-
-        # convcnp M
-        self.conv_theta = nn.Conv2d(channel, 128, 7, 1, 3, groups=channel)
+        self.conv_theta = nn.Conv2d(channel, 128, 9, 1, 4)
         self.cnn = nn.Sequential(
             nn.Conv2d(128 * 2, 128, 1, 1, 0),
-            ResBlock(128, 128, (3, 1, 1)),
-            ResBlock(128, 128, (3, 1, 1)),
-            ResBlock(128, 128, (3, 1, 1)),
-            ResBlock(128, 128, (3, 1, 1)),
+            ResBlock(128, 128),
+            ResBlock(128, 128),
+            ResBlock(128, 128),
+            ResBlock(128, 128),
             nn.Conv2d(128, 2 * channel, 1, 1, 0)
         )
+
+        # convcnp M
+        # self.conv_theta = nn.Conv2d(channel, 128, 7, 1, 3, groups=channel)
+        # self.cnn = nn.Sequential(
+        #     nn.Conv2d(128 * 2, 128, 1, 1, 0),
+        #     ResBlock(128, 128, (3, 1, 1)),
+        #     ResBlock(128, 128, (3, 1, 1)),
+        #     ResBlock(128, 128, (3, 1, 1)),
+        #     ResBlock(128, 128, (3, 1, 1)),
+        #     nn.Conv2d(128, 2 * channel, 1, 1, 0)
+        # )
 
         # convcnp XL
         # self.conv_theta = nn.Conv2d(channel, 128, 11, 1, 5, groups=channel)
@@ -120,8 +120,11 @@ class GridConvCNP(nn.Module):
         """
         B, C, W, H = img.shape
         total_size = W * H
-        ctx_size = torch.empty(B, 1, 1, 1).uniform_(total_size / 100, total_size / 2)
-        ctx_mask = img.new_empty(B, 1, 28, 28).bernoulli_(p=ctx_size / total_size).repeat(1, C, 1, 1)
+        if self.training:
+            ctx_size = torch.empty(B, 1, 1, 1).uniform_(total_size / 100, total_size / 2)
+        else:
+            ctx_size = torch.empty(B, 1, 1, 1).uniform_(total_size / 100, total_size / 50)
+        ctx_mask = img.new_empty(B, 1, W, H).bernoulli_(p=ctx_size / total_size).repeat(1, C, 1, 1)
         return ctx_mask, img * ctx_mask
 
 
@@ -134,7 +137,7 @@ class ResBlock(nn.Module):
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, *params, groups=in_channels),
             nn.ReLU(),
-            nn.Conv2d(out_channels, out_channels, *params, groups=in_channels),
+            nn.Conv2d(out_channels, out_channels, *params)#, groups=out_channels),
         )
         self.final_relu = nn.ReLU()
 

@@ -8,6 +8,7 @@ from torch import Tensor
 from gpytorch.kernels import RBFKernel, ScaleKernel
 
 from ..modules import PowerFunction, Apply, Swish, LieConv
+from ..modules.lieconv import DepthwiseLieConv
 from ..liegroups import T
 
 
@@ -99,7 +100,7 @@ class GridLieCNP(nn.Module):
         self.group = group
 
         self.conv_theta = LieConv(channel, 128, group=group,
-                                  num_nbhd=81, sampling_fraction=1., fill=1 / 10,
+                                  num_nbhd=81, sampling_fraction=1., fill=1 / 50,
                                   use_bn=True, mean=True, cache=True)
 
         self.cnn = nn.Sequential(
@@ -165,15 +166,15 @@ class ResBlock(nn.Module):
         self.group = group
 
         self.conv = nn.Sequential(
-            LieConv(in_channels, out_channels, group=group,
-                    num_nbhd=25, sampling_fraction=1., fill=1 / 15,
-                    use_bn=True, mean=mean, cache=True),
-            Apply(Swish(), dim=1),
-            LieConv(out_channels, out_channels, group=group,
-                    num_nbhd=25, sampling_fraction=1., fill=1 / 15,
-                    use_bn=True, mean=mean, cache=True),
+            DepthwiseLieConv(in_channels, group=group,
+                             num_nbhd=25, sampling_fraction=1., fill=1 / 50,
+                             use_bn=True, mean=mean, cache=True),
+            Apply(nn.ReLU(), dim=1),
+            DepthwiseLieConv(out_channels, group=group,
+                             num_nbhd=25, sampling_fraction=1., fill=1 / 50,
+                             use_bn=True, mean=mean, cache=True),
         )
-        self.final_relu = Swish()
+        self.final_relu = nn.ReLU()
 
     def forward(self, x):
         shortcut = x

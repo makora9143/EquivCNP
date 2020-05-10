@@ -7,6 +7,7 @@ from torch import Tensor
 from gpytorch.kernels import RBFKernel, ScaleKernel
 
 from ..modules import PowerFunction, PointConv, Apply
+from ..modules.pointconv import DepthwisePointConv
 
 
 class PointCNP(nn.Module):
@@ -165,9 +166,9 @@ class ResBlock(nn.Module):
         self.out_channels = out_channels
 
         self.conv = nn.Sequential(
-            PointConv(in_channels, out_channels, num_nbhd=25, coords_dim=2, use_bn=True, mean=mean),
+            DepthwisePointConv(in_channels, num_nbhd=25, coords_dim=2, use_bn=True, mean=mean),
             Apply(nn.ReLU(), dim=1),
-            PointConv(out_channels, out_channels, num_nbhd=25, coords_dim=2, use_bn=True, mean=mean),
+            DepthwisePointConv(out_channels, num_nbhd=25, coords_dim=2, use_bn=True, mean=mean),
         )
         self.final_relu = nn.ReLU()
 
@@ -176,3 +177,69 @@ class ResBlock(nn.Module):
         coords, values, mask = self.conv(x)
         values = self.final_relu(values + shortcut[1])
         return coords, values, mask
+
+
+class AdaptivePointCNP(nn.Module):
+    """Point Convolutional Neural Process
+
+    Args:
+        x_dim (int): input point features
+        y_dim (int): output point features
+
+    """
+    def __init__(self, x_dim, y_dim, nbhd=5):
+        super().__init__()
+
+        self.x_dim = x_dim
+        self.y_dim = y_dim
+
+        self.conv_theta = PointConv(
+            y_dim, 128, coords_dim=x_dim,
+            num_nbhd=300, sampling_fraction=1.,
+            use_bn=True, mean=True)
+
+        self.cnn = nn.Sequential(
+            PointConv(128 * 2, 16, coords_dim=x_dim,
+                      sampling_fraction=1., num_nbhd=nbhd,
+                      use_bn=True, mean=True),
+            Apply(nn.ReLU(), dim=1),
+            PointConv(16, 32, coords_dim=x_dim,
+                      sampling_fraction=1., num_nbhd=nbhd,
+                      use_bn=True, mean=True),
+            Apply(nn.ReLU(), dim=1),
+            PointConv(32, 16, coords_dim=x_dim,
+                      sampling_fraction=1., num_nbhd=nbhd,
+                      use_bn=True, mean=True),
+            Apply(nn.ReLU(), dim=1),
+            PointConv(16, 2, coords_dim=x_dim,
+                      sampling_fraction=1., num_nbhd=nbhd,
+                      use_bn=True, mean=True),
+        )
+        self.pos = nn.Softplus(True)
+
+    def forward(self, ctx: Tuple[Tensor, Tensor], tgt_coords: Tensor):
+        ctx_coords, ctx_values = ctx
+        B, C = ctx_coords.shape[:-1]
+        T = tgt_coords.size(1)
+        tgt_values_shape = (B, T, self.y_dim)
+
+        merged_coords = torch.cat([ctx_coords, tgt_coords], -2)
+        merged_mask = ctx_coords.new_ones(B, C + T).bool()
+        density = torch.cat([
+            ctx_values.new_ones(ctx_values.shape),
+            ctx_values.new_zeros(tgt_values_shape)
+        ], 1)
+        signal = torch.cat([
+            ctx_values,
+            ctx_values.new_zeros(tgt_values_shape)
+        ], 1)
+
+        _, density_prime, _ = self.conv_theta((merged_coords, density, merged_mask))
+        _, signal_prime, _ = self.conv_theta((merged_coords, signal, merged_mask))
+        _, f, _ = self.cnn((merged_coords, torch.cat([density_prime, signal_prime], -1), merged_mask))
+        f_mu, f_sigma = f[:, C:, 0], self.pos(f[:, C:, 1])
+
+        return f_mu, f_sigma.diag_embed()
+
+
+
