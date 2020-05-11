@@ -15,9 +15,11 @@ from fastprogress import master_bar, progress_bar
 
 from lienp.datasets.gpcurve import RBFCurve
 from lienp.models import CNP, LieCNP, ConvCNP, PointCNP
+from lienp.models.pointcnp import AdaptivePointCNP
 from lienp.models import OracleGP
 from lienp.liegroups import T
-from lienp.utils import Metric, plot_and_save_graph
+from lienp.utils import Metric
+from lienp.visualize import plot_and_save_graph
 
 
 warnings.filterwarnings('ignore')
@@ -51,6 +53,8 @@ def load_model(model_name):
         return ConvCNP
     elif model_name == 'pointcnp':
         return partial(PointCNP, nbhd=5)
+    elif model_name == 'adaptivepointcnp':
+        return AdaptivePointCNP
     elif model_name == 'liecnp':
         return partial(LieCNP, group=T(1), nbhd=5, fill=5 / 64)
     else:
@@ -137,7 +141,7 @@ def main(cfg: DictConfig) -> None:
     for epoch in epoch_bar:
         train(cfg, model, trainloader, optimizer)
 
-        if epoch % 5 == 0:
+        if epoch % 1 == 0:
             test(cfg, model, testloader)
     test(cfg, model, testloader)
 

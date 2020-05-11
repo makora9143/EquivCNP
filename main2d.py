@@ -16,7 +16,8 @@ from fastprogress import master_bar, progress_bar
 
 from lienp.models import GridConvCNP, GridPointCNP
 from lienp.models.liecnp import GridLieCNP
-from lienp.utils import Metric, plot_and_save_image2
+from lienp.utils import Metric
+from lienp.visualize import plot_and_save_image2
 from lienp.liegroups import T, SO2, RxSO2, SE2
 from lienp.datasets.clockdigit import ClockDigit
 
@@ -190,7 +191,7 @@ def main(cfg: DictConfig) -> None:
     optimizer = optim.Adam(model.parameters(), lr=cfg.learning_rate)
 
     for epoch in epoch_bar:
-        log.debug(model.conv_theta.fill_fraction_ema)
+        # log.debug(model.conv_theta.fill_fraction_ema)
         train(cfg, model, trainloader, optimizer)
 
         if epoch % 10 == 0:

@@ -21,7 +21,8 @@ from lienp.models import LieCNP
 from lienp.models import ConvCNP
 from lienp.models import PointCNP
 from lienp.transforms import RandomRotation
-from lienp.utils import Metric, plot_and_save_image
+from lienp.utils import Metric
+from lienp.visualize import plot_and_save_image
 
 
 def batch_on_device(batch, device=torch.device('cpu')):
