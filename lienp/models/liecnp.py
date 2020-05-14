@@ -8,7 +8,7 @@ from torch import Tensor
 from gpytorch.kernels import RBFKernel, ScaleKernel
 
 from ..modules import PowerFunction, Apply, Swish, LieConv
-from ..modules.lieconv import DepthwiseLieConv
+from ..modules.lieconv import SeparableLieConv
 from ..liegroups import T
 
 
@@ -100,8 +100,9 @@ class GridLieCNP(nn.Module):
         self.group = group
 
         self.conv_theta = LieConv(channel, 128, group=group,
-                                  num_nbhd=81, sampling_fraction=1., fill=1 / 50,
+                                  num_nbhd=121, sampling_fraction=1., fill=196 / 4096,
                                   use_bn=True, mean=True, cache=True)
+        # self.conv_theta = SeparableLieConv(channel, 128, num_nbhd=81, fill=81/4096, sample=1., group=SE2(), r=4.2)
 
         self.cnn = nn.Sequential(
             Apply(nn.Linear(128 * 2, 128), dim=1),
@@ -128,7 +129,7 @@ class GridLieCNP(nn.Module):
 
         mean = mean.squeeze(-1)
         std = self.pos(std).squeeze(-1)
-        return mean, std.diag_embed(), ctx_density.reshape(B, W, H, C).permute(0, 3, 1, 2)
+        return mean, std.diag_embed(), ctx_density.reshape(B, H, W, C).permute(0, 3, 1, 2)
 
     def get_masked_image(self, img):
         """Get Context image and Target image
@@ -142,7 +143,7 @@ class GridLieCNP(nn.Module):
             ctx_signal (FloatTensor): [B, W*H, C]
 
         """
-        B, C, W, H = img.shape
+        B, C, H, W = img.shape
         total_size = W * H
         ctx_size = torch.empty(B, 1, 1, 1).uniform_(total_size / 100, total_size / 2)
         # Broadcast to channel-axis [B, 1, W, H] -> [B，C, W, H]
@@ -159,20 +160,16 @@ class GridLieCNP(nn.Module):
 
 
 class ResBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, group=T(2), mean=False):
+    def __init__(self, in_channels, out_channels, group=T(2), mean=False, r=2.):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.group = group
 
         self.conv = nn.Sequential(
-            DepthwiseLieConv(in_channels, group=group,
-                             num_nbhd=25, sampling_fraction=1., fill=1 / 50,
-                             use_bn=True, mean=mean, cache=True),
+            SeparableLieConv(in_channels, out_channels, num_nbhd=81, fill=121 / 4096, sample=1., group=group, r=r, use_bn=True, mean=True),
             Apply(nn.ReLU(), dim=1),
-            DepthwiseLieConv(out_channels, group=group,
-                             num_nbhd=25, sampling_fraction=1., fill=1 / 50,
-                             use_bn=True, mean=mean, cache=True),
+            SeparableLieConv(out_channels, out_channels, num_nbhd=81, fill=121 / 4096, sample=1., group=group, r=r, use_bn=True, mean=True)
         )
         self.final_relu = nn.ReLU()
 

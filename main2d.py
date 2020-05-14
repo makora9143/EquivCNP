@@ -44,8 +44,9 @@ def train_dataloader(cfg):
                          transform=transforms)
     elif cfg.dataset == 'clockdigit':
         transforms = tf.Compose([
-            tf.Lambda(lambda x: tf.functional.affine(x, 0, (0, 0), 0.25, 0)),
             tf.Pad(16),
+            tf.Lambda(lambda x: tf.functional.affine(x, 0, (0, 0), 2.0, 0)),
+            # tf.RandomAffine(degrees=30),
             tf.ToTensor()
         ])
         trainset = ClockDigit("~/data/clockdigits", download=True, transform=transforms)
@@ -59,7 +60,7 @@ def train_dataloader(cfg):
                              batch_size=cfg.batch_size,
                              shuffle=True,
                              num_workers=4 *
-                             4 if torch.cuda.device_count() > 1 else 0)
+                             4 if torch.cuda.device_count() > 1 else 4)
     return trainloader
 
 
@@ -74,7 +75,7 @@ def test_dataloader(cfg):
     elif cfg.dataset == 'clockdigit':
         transforms = tf.Compose([
             tf.Pad(16),
-            tf.RandomAffine(degrees=180, scale=(1.5, 2.0)),
+            tf.RandomAffine(degrees=90, scale=(0.6, 0.9)),
             tf.ToTensor()
         ])
         testset = ClockDigit("~/data/clockdigits", download=True, transform=transforms)
@@ -107,9 +108,9 @@ def load_group(group_name):
     if group_name == 'T2':
         return T(2)
     elif group_name == 'SO2':
-        return SO2(.2)
+        return SO2(.3)
     elif group_name == 'RxSO2':
-        return RxSO2(.2)
+        return RxSO2(.3)
     elif group_name == 'SE2':
         return SE2(.2)
     else:
@@ -156,7 +157,7 @@ def test(cfg, model, dataloader):
             mu, sigma, ctx_mask = model(imgs)
             tgt_y_dist = MultivariateNormal(mu, scale_tril=sigma)
             loss = - tgt_y_dist.log_prob(imgs.reshape(imgs.size(0), -1)).mean()
-            loss_meter.log(loss.item(), 1)
+            loss_meter.log(-loss.item(), 1)
 
             mse_meter.log((tgt_y_dist.mean - imgs.reshape(imgs.size(0), -1)).pow(2).mean().item(),
                           imgs.size(0))
@@ -167,7 +168,7 @@ def test(cfg, model, dataloader):
             preds.append(tgt_y_dist)
         epoch = epoch_bar.main_bar.last_v + 1 if epoch_bar.main_bar.last_v is not None else cfg.epochs
         plot_and_save_image2(ctxs, tgts, preds, img_shape=(imgs.shape[1:]), epoch=epoch)
-    log.info("\tEpoch {} Test: loss={:.3f}, MSE={:.4f}".format(
+    log.info("\tEpoch {} Test: log p={:.3f}, MSE={:.4f}".format(
         epoch, loss_meter.average, mse_meter.average))
 
 
@@ -197,6 +198,7 @@ def main(cfg: DictConfig) -> None:
         if epoch % 10 == 0:
             test(cfg, model, testloader)
     test(cfg, model, testloader)
+    torch.save(model.cpu().state_dict(), 'model_weight.pth')
 
 
 if __name__ == '__main__':

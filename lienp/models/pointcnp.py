@@ -7,7 +7,7 @@ from torch import Tensor
 from gpytorch.kernels import RBFKernel, ScaleKernel
 
 from ..modules import PowerFunction, PointConv, Apply
-from ..modules.pointconv import DepthwisePointConv
+from ..modules.pointconv import DepthwisePointConv, SeparablePointConv
 
 
 class PointCNP(nn.Module):
@@ -166,9 +166,9 @@ class ResBlock(nn.Module):
         self.out_channels = out_channels
 
         self.conv = nn.Sequential(
-            DepthwisePointConv(in_channels, num_nbhd=25, coords_dim=2, use_bn=True, mean=mean),
+            SeparablePointConv(in_channels, out_channels, num_nbhd=25, coords_dim=2),
             Apply(nn.ReLU(), dim=1),
-            DepthwisePointConv(out_channels, num_nbhd=25, coords_dim=2, use_bn=True, mean=mean),
+            SeparablePointConv(out_channels, out_channels, num_nbhd=25, coords_dim=2),
         )
         self.final_relu = nn.ReLU()
 

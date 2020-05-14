@@ -221,7 +221,7 @@ class DepthwisePointConv(PointConv):
             in_channels: int,
             num_nbhd: int = 32,
             coords_dim: int = 3,
-            sampling_fraction: float = 1,
+            sample: float = 1,
             activation: nn.Module = None,
             use_bn: bool = False,
             mean: bool = False
@@ -232,7 +232,7 @@ class DepthwisePointConv(PointConv):
             mid_channels=in_channels,
             num_nbhd=num_nbhd,
             coords_dim=coords_dim,
-            sampling_fraction=sampling_fraction,
+            sampling_fraction=sample,
             activation=activation,
             use_bn=use_bn,
             mean=mean
@@ -267,3 +267,18 @@ class DepthwisePointConv(PointConv):
         if self.mean:
             convolved_values /= nbhd_mask.sum(-1, keepdim=True).clamp(min=1)
         return convolved_values
+
+
+class SeparablePointConv(nn.Module):
+    def __init__(self, in_channels, out_channels, num_nbhd, sample=1., coords_dim=2):
+        super().__init__()
+        self.depthwise = DepthwisePointConv(in_channels, num_nbhd=num_nbhd, sample=sample,
+                                            coords_dim=coords_dim, use_bn=True, mean=True)
+        self.pointwise = nn.Linear(in_channels, out_channels)
+
+    def forward(self, inputs: Tuple[Tensor, Tensor, Tensor]):
+        query_coords, convoleved_wzeros, query_mask = self.depthwise(inputs)
+        convoleved_wzeros = self.pointwise(convoleved_wzeros)
+        return query_coords, convoleved_wzeros, query_mask
+
+

@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch import Tensor
 
-from .pointconv import PointConv, DepthwisePointConv
+from .pointconv import PointConv
 from .group_farthersubsample import GroupFartherSubsample
 from ..liegroups import LieGroup, SE3
 
@@ -37,10 +37,8 @@ class LieConv(PointConv):
             group: LieGroup = SE3(),
             fill: float = 1 / 3,
             cache: bool = False,
+            r: float = 2.,
     ) -> None:
-        self.group = group
-        self.r = 2.
-        self.fill_fraction = min(fill, 1.)
         super().__init__(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -53,6 +51,9 @@ class LieConv(PointConv):
             use_bn=use_bn,
             mean=mean,
         )
+        self.group = group
+        self.register_buffer("r", torch.as_tensor(float(r)))
+        self.fill_fraction = min(fill, 1.)
         self.subsample = GroupFartherSubsample(sampling_fraction, cache=cache, group=self.group)
         self.coeff = 0.5
         self.fill_fraction_ema = fill
@@ -108,12 +109,13 @@ class LieConv(PointConv):
             1e8 * torch.ones_like(dists)
         )
 
-        k = min(self.num_nbhd, values.size(1))
+        k = min(self.num_nbhd, values.size(1))  # TODO
         batch_size, query_size, N = dists.shape
 
         within_ball = (dists < self.r) & masks[:, None, :] & masks_at_query[:, :, None]  # (B, M, N)
         noise = within_ball.new_empty(batch_size, query_size, N).float().uniform_(0, 1)
-        _, nbhd_idx = torch.topk(within_ball + noise, k, dim=-1, largest=True, sorted=False)  # (B, M, nbhd)
+        valid_within_ball, nbhd_idx = torch.topk(within_ball + noise, k, dim=-1, largest=True, sorted=False)  # (B, M, nbhd)
+        valid_within_ball = valid_within_ball > 1
 
         B = torch.arange(batch_size)[:, None, None].expand(*nbhd_idx.shape).to(values.device)  # (B, 1, 1) -> expand -> (B, M, nbhd)
         M = torch.arange(query_size)[None, :, None].expand(*nbhd_idx.shape).to(values.device)  # (1, M, 1) -> expand -> (B, M, nbhd)
@@ -125,7 +127,7 @@ class LieConv(PointConv):
             avg_fill = (navg / masks.sum(-1).float().mean()).cpu().item()  # 全体のうちどれくらい埋まってるか
             self.r += self.coeff * (self.fill_fraction - avg_fill)  # 想定のfill_fractionより少なければ範囲を追加，多ければ範囲を絞る
             self.fill_fraction_ema += 0.1 * (avg_fill - self.fill_fraction_ema)
-        return nbhd_ab, nbhd_values, nbhd_masks
+        return nbhd_ab, nbhd_values, (nbhd_masks & valid_within_ball.bool())
 
     def point_conv(self, nbhd_ab: Tensor, nbhd_values: Tensor, nbhd_mask: Tensor) -> Tensor:
         """Point Convolution.
@@ -172,26 +174,28 @@ class DepthwiseLieConv(LieConv):
             self,
             in_channels: int,
             num_nbhd: int = 32,
-            sampling_fraction: float = 1,
+            sample: float = 1,
             activation: nn.Module = None,
             use_bn: bool = False,
             mean: bool = False,
             group: LieGroup = SE3(),
             fill: float = 1 / 3,
             cache: bool = False,
+            r: float = 2,
     ) -> None:
         super().__init__(
             in_channels=in_channels,
             out_channels=in_channels,
             mid_channels=in_channels,
             num_nbhd=num_nbhd,
-            sampling_fraction=sampling_fraction,
+            sampling_fraction=sample,
             activation=activation,
             use_bn=use_bn,
             mean=mean,
             group=group,
             fill=fill,
             cache=cache,
+            r=r,
         )
         self.linear = None
 
@@ -227,3 +231,16 @@ class DepthwiseLieConv(LieConv):
         if self.mean:
             convolved_values /= nbhd_mask.sum(-1, keepdim=True).clamp(min=1)
         return convolved_values
+
+
+class SeparableLieConv(nn.Module):
+    def __init__(self, in_channels, out_channels, num_nbhd, fill=1 / 50, sample=1., group=SE3(), r=2, use_bn=False, mean=False):
+        super().__init__()
+        self.depthwise = DepthwiseLieConv(in_channels, num_nbhd=num_nbhd, fill=fill, sample=sample,
+                                          group=group, use_bn=use_bn, mean=mean, r=r)
+        self.pointwise = nn.Linear(in_channels, out_channels)
+
+    def forward(self, input: Tuple[Tensor, Tensor, Tensor]):
+        coords, values, mask = self.depthwise(input)
+        values = self.pointwise(values)
+        return coords, values, mask

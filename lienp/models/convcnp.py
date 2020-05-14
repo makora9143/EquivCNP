@@ -64,7 +64,11 @@ class GridConvCNP(nn.Module):
         self.channel = channel
 
         # convcnp S
-        self.conv_theta = nn.Conv2d(channel, 128, 9, 1, 4)
+        self.conv_theta = nn.Sequential(
+            nn.Conv2d(channel, channel, 9, 1, 4, groups=channel),
+            nn.Conv2d(channel, 128, 1, 1, 0)
+        )
+
         self.cnn = nn.Sequential(
             nn.Conv2d(128 * 2, 128, 1, 1, 0),
             ResBlock(128, 128),
@@ -135,9 +139,11 @@ class ResBlock(nn.Module):
         self.out_channels = out_channels
 
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, *params, groups=in_channels),
+            nn.Conv2d(in_channels, in_channels, *params, groups=in_channels),
+            nn.Conv2d(in_channels, out_channels, 1, 1, 0),
             nn.ReLU(),
-            nn.Conv2d(out_channels, out_channels, *params)#, groups=out_channels),
+            nn.Conv2d(out_channels, out_channels, *params, groups=out_channels),
+            nn.Conv2d(out_channels, out_channels, 1, 1, 0),
         )
         self.final_relu = nn.ReLU()
 
