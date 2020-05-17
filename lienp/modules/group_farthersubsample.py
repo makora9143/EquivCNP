@@ -20,18 +20,18 @@ def _farthest_point_sample(dist_matrix: Tensor, n_samples: int, mask: Tensor):
     B, N = dist_matrix.shape[:2]
     device = dist_matrix.device
 
-    centroids = torch.zeros(B, n_samples).long().to(device)
-    distances = torch.ones(B, N).to(device) * 1e8
+    centroids = torch.zeros(B, n_samples, device=device, dtype=torch.long)
+    distances = torch.ones(B, N, device=device) * 1e8
 
-    random_indices = torch.randint(low=0, high=N, size=(B,)).to(device)
+    random_indices = torch.randint(low=0, high=N, size=(B,), device=device)
     tmp_index = random_indices % mask.sum(-1)
     tmp_index += torch.cat([
-        torch.zeros(1).to(device).long(),
+        torch.zeros(1, device=device, dtype=torch.long),
         mask.sum(-1).cumsum(0)[:-1]
     ], dim=0)
 
     farthest_indices = torch.where(mask)[1][tmp_index]
-    batch_indices = torch.arange(B).long().to(device)
+    batch_indices = torch.arange(B, device=device, dtype=torch.long)
 
     for i in range(n_samples):
         centroids[:, i] = farthest_indices
@@ -71,7 +71,7 @@ class GroupFartherSubsample(nn.Module):
         """
         ab_pairs, values, mask = inputs
         dist = self.group.distance if self.group else lambda ab: norm(ab, dim=-1)
-        if self.sampling_fraction != 1:
+        if self.sampling_fraction != 1.:
             num_sampled_points = int(round(self.sampling_fraction * ab_pairs.size(1)))
             if self.cache and self.cached_indices is None:
                 query_idx = self.cached_indices = _farthest_point_sample(dist(ab_pairs), num_sampled_points, mask).detach()
@@ -80,11 +80,11 @@ class GroupFartherSubsample(nn.Module):
             else:
                 query_idx = _farthest_point_sample(dist(ab_pairs), num_sampled_points, mask)
 
-            B = torch.arange(query_idx.size(0)).long().to(query_idx.device)[:, None]
+            B = torch.arange(query_idx.size(0), device=query_idx.device, dtype=torch.long)[:, None]
             subsampled_ab_pairs = ab_pairs[B, query_idx][B, :, query_idx]
             subsampled_values = values[B, query_idx]
             subsampled_mask = mask[B, query_idx]
-
+            assert torch.sum(~subsampled_mask) == 0
         else:
             subsampled_ab_pairs = ab_pairs
             subsampled_values = values

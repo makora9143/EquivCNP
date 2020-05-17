@@ -39,14 +39,17 @@ class LieGroup(object, metaclass=Named):
         assert order <= 4, "BCH only supported up to order 4"
         B = self.bracket
         z = a + b
-        if order == 1: return z
+        if order == 1:
+            return z
         ab = B(a, b)
         z += (1 / 2) * ab
-        if order == 2: return z
+        if order == 2:
+            return z
         aab = B(a, ab)
         bba = B(b, -ab)
         z += (1 / 12) * (aab + bba)
-        if order == 3: return z
+        if order == 3:
+            return z
         baab = B(b, aab)
         z += -(1 / 24) * baab
         return z
@@ -87,7 +90,7 @@ class LieGroup(object, metaclass=Named):
             *expanded_a.shape[:-1])  # (bs,n,ns) -> (bs,n*ns)
         # convert from elems to pairs
         paired_a = self.elems2pairs(
-            expanded_a)  #(bs,n*ns,d) -> (bs,n*ns,n*ns,d)
+            expanded_a)  # (bs,n*ns,d) -> (bs,n*ns,n*ns,d)
         if expanded_q is not None:
             q_in = expanded_q.unsqueeze(-2).expand(*paired_a.shape[:-1], 1)
             q_out = expanded_q.unsqueeze(-3).expand(*paired_a.shape[:-1], 1)
@@ -98,7 +101,7 @@ class LieGroup(object, metaclass=Named):
 
     def expand_like(self, v, m, a):
         nsamples = a.shape[-2] // m.shape[-1]
-        #print(nsamples,a.shape,v.shape)
+        # print(nsamples,a.shape,v.shape)
         expanded_v = v[..., None, :].repeat(
             (1, ) * len(v.shape[:-1]) +
             (nsamples, 1))  # (bs,n,c) -> (bs,n,1,c) -> (bs,n,ns,c)
@@ -116,7 +119,7 @@ class LieGroup(object, metaclass=Named):
         # ((bs,1,n,d) -> (bs,1,n,r,r))@((bs,n,1,d) -> (bs,n,1,r,r))
         vinv = self.exp(-a.unsqueeze(-3))
         u = self.exp(a.unsqueeze(-2))
-        #print(vinv.shape,u.shape)
+        # print(vinv.shape,u.shape)
         return self.log(vinv @ u)
 
     def __str__(self):
@@ -225,12 +228,12 @@ def cosc(x):
 def coscc(x):
     """  """
     x2 = x * x
-    #assert not torch.any(torch.isinf(x2)), f"infs in x2 log"
+    # assert not torch.any(torch.isinf(x2)), f"infs in x2 log"
     usetaylor = (x.abs() < thresh)
     texpand = 1 / 12 * (1 + x2 / 60 * (1 + x2 / 42 * (1 + x2 / 40)))
     costerm = (2 * (1 - x.cos())).clamp(min=1e-6)
     full = (1 -
-            x * x.sin() / costerm) / x**2  #Nans can come up here when cos = 1
+            x * x.sin() / costerm) / x**2  # Nans can come up here when cos = 1
     output = torch.where(usetaylor, texpand, full)
     return output
 
@@ -243,8 +246,7 @@ def sinc_inv(x):
     return torch.where(usetaylor, texpand, x / x.sin())
 
 
-## Lie Groups acting on R2
-
+# #Lie Groups acting on R2
 
 class SO2(LieGroup):
     embed_dim = 1
@@ -279,7 +281,7 @@ class SO2(LieGroup):
     def lifted_elems(self, pt, mask=None, nsamples=1):
         """ pt (bs,n,D) mask (bs,n), per_point specifies whether to
             use a different group element per atom in the molecule"""
-        #return farthest_lift(self,pt,mask,nsamples,alpha)
+        # return farthest_lift(self,pt,mask,nsamples,alpha)
         # same lifts for each point right now
         bs, n, D = pt.shape[:3]  # origin = [1,0]
         assert D == 2, "Lifting from R^2 to SO(2) supported only"
@@ -440,7 +442,7 @@ class SE2(SO2):
         thetas = torch.linspace(-np.pi, np.pi, nsamples + 1)[1:]
         for _ in pt.shape[:-1]:  # uniform on circle, but -pi and pi ar the same
             thetas = thetas.unsqueeze(0)
-        R = torch.zeros(*pt.shape[:-1], nsamples, d, d).to(pt.device)
+        R = torch.zeros(*pt.shape[:-1], nsamples, d, d, device=pt.device)
         sin, cos = thetas.sin(), thetas.cos()
         R[..., 0, 0] = cos
         R[..., 1, 1] = cos
@@ -463,8 +465,7 @@ class SE2(SO2):
         return d_theta * self.alpha + (1 - self.alpha) * d_r
 
 
-## Lie Groups acting on R3
-
+# # Lie Groups acting on R3
 
 # Hodge star on R3
 def cross_matrix(k):
@@ -557,24 +558,24 @@ class SO3(LieGroup):
                            3,
                            device=device,
                            dtype=dtype)  # (*,3)
-        zhat[..., 0] = 1  #theta
+        zhat[..., 0] = 1  # theta
         Rz = self.exp(zhat * theta)
 
         # Compute the rotation between zhat and p
         r = norm(pt, dim=-1).unsqueeze(-1)  # (*,1)
         assert not torch.any(torch.isinf(pt) | torch.isnan(pt))
         p_on_sphere = pt / r.clamp(min=1e-5)
-        #assert not torch.any(torch.isinf(p_on_sphere)|torch.isnan(p_on_sphere))
+        # assert not torch.any(torch.isinf(p_on_sphere)|torch.isnan(p_on_sphere))
         w = torch.cross(zhat, p_on_sphere[..., None, :].expand(*zhat.shape))
         sin = norm(w, dim=-1)
         cos = p_on_sphere[..., None, 0]
-        #rr = r[...,None,:].expand(*zhat.shape[:-1],1)
+        # rr = r[...,None,:].expand(*zhat.shape[:-1],1)
 
         angle = torch.atan2(sin, cos).unsqueeze(-1)  #cos angle
         Rp = self.exp(w * sinc_inv(angle))
 
         # Combine the rotations into one
-        #assert not torch.any(torch.isnan(Rp)|torch.isinf(Rp))
+        # assert not torch.any(torch.isnan(Rp)|torch.isinf(Rp))
         A = self.log(Rp @ Rz)  # Convert to lie algebra element
         assert not torch.any(torch.isnan(A) | torch.isinf(A))
         q = r[..., None, :].expand(*r.shape[:-1], nsamples,
@@ -610,16 +611,16 @@ class SE3(SO3):
         w = super().log(U[..., :3, :3])
         I = torch.eye(3, device=w.device, dtype=w.dtype)
         K = cross_matrix(w[..., :3])
-        #assert not torch.any(torch.isinf(K)), f"infs in K log {torch.isinf(K).sum()}"
+        # assert not torch.any(torch.isinf(K)), f"infs in K log {torch.isinf(K).sum()}"
 
         theta = norm(w, dim=-1)[..., None, None]  #%(2*np.pi)
-        #theta[theta>np.pi] -= 2*np.pi
-        #assert not torch.any(torch.isinf(theta)), f"infs in theta log {torch.isinf(theta).sum()}"
+        # theta[theta>np.pi] -= 2*np.pi
+        # assert not torch.any(torch.isinf(theta)), f"infs in theta log {torch.isinf(theta).sum()}"
         cosccc = coscc(theta)
-        #assert not torch.any(torch.isinf(cosccc)), f"infs in coscc log {torch.isinf(cosccc).sum()}"
+        # assert not torch.any(torch.isinf(cosccc)), f"infs in coscc log {torch.isinf(cosccc).sum()}"
         Vinv = I - K / 2 + cosccc * (K @ K)
         u = (Vinv @ U[..., :3, 3].unsqueeze(-1)).squeeze(-1)
-        #assert not torch.any(torch.isnan(u)), f"nans in u log {torch.isnan(u).sum()}, {torch.where(torch.isnan(u))}"
+        # assert not torch.any(torch.isnan(u)), f"nans in u log {torch.isnan(u).sum()}, {torch.where(torch.isnan(u))}"
         return torch.cat([w, u], dim=-1)
 
     def components2matrix(self, a):  # a: (*,3)
@@ -655,7 +656,7 @@ class SE3(SO3):
     def lifted_elems(self, pt, mask, nsamples):
         """ pt (bs,n,D) mask (bs,n), per_point specifies whether to
             use a different group element per atom in the molecule"""
-        #return farthest_lift(self,pt,mask,nsamples,alpha)
+        # return farthest_lift(self,pt,mask,nsamples,alpha)
         # same lifts for each point right now
         bs, n = pt.shape[:2]
         if self.per_point:
@@ -687,7 +688,7 @@ class SE3(SO3):
                         dtype=pt.dtype)  # (bs,n,nsamples,4,4)
         T[..., :, :] = torch.eye(4, device=pt.device, dtype=pt.dtype)
         T[..., :3, 3] = pt[:, :, None, :]  # (bs,n,1,3)
-        a = self.log(T @ R)  #@R) # bs, n, nsamples, 6
+        a = self.log(T @ R)  # @R) # bs, n, nsamples, 6
         return a.reshape(bs, n * nsamples, 6), None
 
     def distance(self, abq_pairs):
@@ -701,7 +702,7 @@ def farthest_lift(self, pt, mask, nsamples, alpha=.5):
     bs, n = pt.shape[:2]
     d = self.embed_dim
     # Sample stabilizer of the origin
-    #thetas = (torch.rand(*p.shape[:-1],num_samples).to(p.device)*2-1)*np.pi
+    # thetas = (torch.rand(*p.shape[:-1],num_samples).to(p.device)*2-1)*np.pi
 
     picked_group_elems = torch.zeros(bs,
                                      n,
@@ -709,7 +710,7 @@ def farthest_lift(self, pt, mask, nsamples, alpha=.5):
                                      d,
                                      device=pt.device,
                                      dtype=pt.dtype)
-    picked_mask = picked_group_elems[..., :1] > 1  #(bs,n,nsamples,1) all False
+    picked_mask = picked_group_elems[..., :1] > 1  # (bs,n,nsamples,1) all False
     # Randomly pick for the first point
 
     for i in range(nsamples):
@@ -727,22 +728,22 @@ def farthest_lift(self, pt, mask, nsamples, alpha=.5):
                             dtype=pt.dtype)  # (bs,nlift,4,4)
             T[..., :, :] = torch.eye(4, device=pt.device, dtype=pt.dtype)
             T[..., :3, 3] = pt[:, j, None, :]  # (bs,1,3)
-            a = self.log(T @ R)  #@R) # bs, nlift, 6
-            #assert not torch.any(torch.isnan(a)), f"nans in a {torch.isnan(a).sum()}"
+            a = self.log(T @ R)  # @R) # bs, nlift, 6
+            # assert not torch.any(torch.isnan(a)), f"nans in a {torch.isnan(a).sum()}"
             #                           (bs,n,nsamples,1,d) x (bs,1,1,nlift,d) -> (bs,n,nsamples,nlift,d)
             distances = self.distance(picked_group_elems[..., None, :],
                                       a[:, None, None, :],
-                                      alpha=alpha)  #(bs,n,nsamples,1,d)
+                                      alpha=alpha)  # (bs,n,nsamples,1,d)
             distances_m = torch.where(mask[:, :, None, None], distances,
                                       1e7 * torch.ones_like(distances))
             masked_distances = torch.where(~picked_mask, distances_m,
                                            1e8 * torch.ones_like(distances_m))
             farthest_idx = distances.min(dim=2)[0].min(dim=1)[0].argmax(
                 -1)  # (bs,n,nsamples,nlift) -> (bs,)
-            BatchIdx = torch.arange(bs).long().to(a.device)
-            picked_elem = a[BatchIdx, farthest_idx, :]  #(bs,nlift,6) -> (bs,6)
+            BatchIdx = torch.arange(bs, device=a.device, dtype=torch.long)
+            picked_elem = a[BatchIdx, farthest_idx, :]  # (bs,nlift,6) -> (bs,6)
             picked_group_elems[:, j, i, :] = picked_elem
-            #assert not torch.any(torch.isnan(picked_elem)), f"nans in a {torch.isnan(picked_elem).sum()}"
+            # assert not torch.any(torch.isnan(picked_elem)), f"nans in a {torch.isnan(picked_elem).sum()}"
             picked_mask[:, j, i] = True
     return picked_group_elems.reshape(bs, n * nsamples, d)
 

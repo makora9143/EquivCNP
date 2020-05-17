@@ -75,10 +75,13 @@ class LieConv(PointConv):
         subsampled_ab_pairs, subsampled_values, subsampled_mask, query_indices = self.subsample(inputs, withquery=True)
         nbhd_ab_pairs, nbhd_values, nbhd_mask = self.extract_neighborhood(inputs, query_indices)
         convolved_values = self.point_conv(nbhd_ab_pairs, nbhd_values, nbhd_mask)
-        convolved_wzeros = torch.where(subsampled_mask.unsqueeze(-1),
-                                       convolved_values,
-                                       torch.zeros_like(convolved_values))
-        return subsampled_ab_pairs, convolved_wzeros, subsampled_mask
+        # FIXME
+        # convolved_wzeros = torch.where(subsampled_mask.unsqueeze(-1),
+        #                                convolved_values,
+        #                                torch.zeros_like(convolved_values))
+        # convolved_wzeros = convolved_values * subsampled_mask.unsqueeze(-1)
+        # return subsampled_ab_pairs, convolved_wzeros, subsampled_mask
+        return subsampled_ab_pairs, convolved_values, subsampled_mask
 
     def extract_neighborhood(self, inputs: Tensor, query_indices: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         """Extract neighborhood points of sampled centroid indices (points) from inputs
@@ -95,7 +98,7 @@ class LieConv(PointConv):
         """
         pairs_ab, values, masks = inputs
         if query_indices is not None:
-            B = torch.arange(values.size(0)).long().to(values.device)[:, None]
+            B = torch.arange(values.size(0), device=values.device, dtype=torch.long)[:, None]
             ab_at_query = pairs_ab[B, query_indices]  # (B, M, N, D)
             masks_at_query = masks[B, query_indices]  # (B, M)
         else:
@@ -103,31 +106,32 @@ class LieConv(PointConv):
             masks_at_query = masks  # (B, N)
         values_at_query = values  # (B, N, C_in)
         dists = self.group.distance(ab_at_query)  # (B, M, N)
-        dists = torch.where(
-            masks[:, None, :].expand(*dists.shape),
-            dists,
-            1e8 * torch.ones_like(dists)
-        )
+        # FIXME
+        # dists = torch.where(
+        #     masks[:, None, :].expand(*dists.shape),
+        #     dists,
+        #     1e8 * torch.ones_like(dists)
+        # )
 
         k = min(self.num_nbhd, values.size(1))  # TODO
         batch_size, query_size, N = dists.shape
 
         within_ball = (dists < self.r) & masks[:, None, :] & masks_at_query[:, :, None]  # (B, M, N)
-        noise = within_ball.new_empty(batch_size, query_size, N).float().uniform_(0, 1)
+        noise = values.new_empty(batch_size, query_size, N).uniform_(0, 1)
         valid_within_ball, nbhd_idx = torch.topk(within_ball + noise, k, dim=-1, largest=True, sorted=False)  # (B, M, nbhd)
         valid_within_ball = valid_within_ball > 1
 
-        B = torch.arange(batch_size)[:, None, None].expand(*nbhd_idx.shape).to(values.device)  # (B, 1, 1) -> expand -> (B, M, nbhd)
-        M = torch.arange(query_size)[None, :, None].expand(*nbhd_idx.shape).to(values.device)  # (1, M, 1) -> expand -> (B, M, nbhd)
+        B = torch.arange(batch_size, device=values.device)[:, None, None].expand(*nbhd_idx.shape)  # (B, 1, 1) -> expand -> (B, M, nbhd)
+        M = torch.arange(query_size, device=values.device)[None, :, None].expand(*nbhd_idx.shape)  # (1, M, 1) -> expand -> (B, M, nbhd)
         nbhd_ab = ab_at_query[B, M, nbhd_idx]  # (B, M, nbhd, D)
         nbhd_values = values_at_query[B, nbhd_idx]  # (B, M, nbhd, C_in)
         nbhd_masks = masks[B, nbhd_idx]  # (B, M, nbhd)
-        navg = (within_ball.float()).sum(-1).sum() / masks_at_query[:, :, None].sum()  # query1点あたりのボール内の平均数
+        navg = within_ball.sum(-1).sum() / masks_at_query[:, :, None].sum()  # query1点あたりのボール内の平均数
         if self.training:
-            avg_fill = (navg / masks.sum(-1).float().mean()).cpu().item()  # 全体のうちどれくらい埋まってるか
+            avg_fill = (navg / masks.sum(-1, dtype=torch.float).mean()).detach()  # 全体のうちどれくらい埋まってるか
             self.r += self.coeff * (self.fill_fraction - avg_fill)  # 想定のfill_fractionより少なければ範囲を追加，多ければ範囲を絞る
             self.fill_fraction_ema += 0.1 * (avg_fill - self.fill_fraction_ema)
-        return nbhd_ab, nbhd_values, (nbhd_masks & valid_within_ball.bool())
+        return nbhd_ab, nbhd_values, (nbhd_masks & valid_within_ball)
 
     def point_conv(self, nbhd_ab: Tensor, nbhd_values: Tensor, nbhd_mask: Tensor) -> Tensor:
         """Point Convolution.
@@ -147,16 +151,18 @@ class LieConv(PointConv):
         _, penultimate_kernel_weights, _ = self.weightnet(
             (None, nbhd_ab, nbhd_mask)
         )
-        masked_penultimate_kernel_weights = torch.where(
-            nbhd_mask.unsqueeze(-1),
-            penultimate_kernel_weights,
-            torch.zeros_like(penultimate_kernel_weights)
-        )
-        masked_nbhd_values = torch.where(
-            nbhd_mask.unsqueeze(-1),
-            nbhd_values,
-            torch.zeros_like(nbhd_values)
-        )
+        # masked_penultimate_kernel_weights = torch.where(
+        #     nbhd_mask.unsqueeze(-1),
+        #     penultimate_kernel_weights,
+        #     torch.zeros_like(penultimate_kernel_weights)
+        # )
+        # masked_nbhd_values = torch.where(
+        #     nbhd_mask.unsqueeze(-1),
+        #     nbhd_values,
+        #     torch.zeros_like(nbhd_values)
+        # )
+        masked_penultimate_kernel_weights = penultimate_kernel_weights * nbhd_mask.unsqueeze(-1)
+        masked_nbhd_values = nbhd_values * nbhd_mask.unsqueeze(-1)
         partial_convolved_values = masked_nbhd_values.transpose(-1, -2).matmul(masked_penultimate_kernel_weights).reshape(B, M, -1)
         convolved_values = self.linear(partial_convolved_values)
         if self.mean:
@@ -217,16 +223,18 @@ class DepthwiseLieConv(LieConv):
         _, penultimate_kernel_weights, _ = self.weightnet(
             (None, nbhd_ab, nbhd_mask)
         )  # (B, M, nbhd)
-        masked_penultimate_kernel_weights = torch.where(
-            nbhd_mask.unsqueeze(-1),
-            penultimate_kernel_weights,
-            torch.zeros_like(penultimate_kernel_weights)
-        )
-        masked_nbhd_values = torch.where(
-            nbhd_mask.unsqueeze(-1),
-            nbhd_values,
-            torch.zeros_like(nbhd_values)
-        )
+        # masked_penultimate_kernel_weights = torch.where(
+        #     nbhd_mask.unsqueeze(-1),
+        #     penultimate_kernel_weights,
+        #     torch.zeros_like(penultimate_kernel_weights)
+        # )
+        # masked_nbhd_values = torch.where(
+        #     nbhd_mask.unsqueeze(-1),
+        #     nbhd_values,
+        #     torch.zeros_like(nbhd_values)
+        # )
+        masked_penultimate_kernel_weights = penultimate_kernel_weights * nbhd_mask.unsqueeze(-1)
+        masked_nbhd_values = nbhd_values * nbhd_mask.unsqueeze(-1)
         convolved_values = torch.sum(masked_nbhd_values * masked_penultimate_kernel_weights, -2)
         if self.mean:
             convolved_values /= nbhd_mask.sum(-1, keepdim=True).clamp(min=1)

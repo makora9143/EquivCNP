@@ -8,6 +8,29 @@ from . import Swish, MaskBatchNormNd, Apply, EuclidFartherSubsample
 from ..utils import knn_points, index_points
 
 
+# class LinearBlock(nn.Module):
+#     """Linear -> BN -> Activation (Swish / ReLU)"""
+#     def __init__(
+#             self,
+#             in_features: int,
+#             out_features: int,
+#             activation: nn.Module = None,
+#             use_bn: bool = False
+#     ):
+#         super().__init__()
+#         self.in_features = in_features
+#         self.out_features = out_features
+#         self.linear = Apply(nn.Linear(in_features, out_features), dim=1)
+#         self.bn = MaskBatchNormNd(out_features) if use_bn else None
+#         self.activation = Apply(Swish() if activation is None else nn.ReLU(), dim=1)
+
+#     def forward(self, x: Tensor):
+#         h = self.linear(x)
+#         if self.bn is not None:
+#             h = self.bn(h)
+#         h = self.activation(h)
+#         return h
+
 class LinearBlock(nn.Module):
     """Linear -> BN -> Activation (Swish / ReLU)"""
     def __init__(
@@ -20,12 +43,15 @@ class LinearBlock(nn.Module):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.linear = Apply(nn.Linear(in_features, out_features), dim=1)
+        self.linear = nn.Linear(in_features, out_features)
         self.bn = MaskBatchNormNd(out_features) if use_bn else None
-        self.activation = Apply(Swish() if activation is None else nn.ReLU(), dim=1)
+        self.activation = Apply(Swish(inplace=True) if activation is None else nn.ReLU(inplace=True))
 
     def forward(self, x: Tensor):
-        h = self.linear(x)
+        coords, values, mask = x
+        numel = values.shape[:-1]
+        values = self.linear(values.reshape(-1, self.in_features)).reshape(*numel, self.out_features)
+        h = (coords, values, mask)
         if self.bn is not None:
             h = self.bn(h)
         h = self.activation(h)
@@ -280,5 +306,3 @@ class SeparablePointConv(nn.Module):
         query_coords, convoleved_wzeros, query_mask = self.depthwise(inputs)
         convoleved_wzeros = self.pointwise(convoleved_wzeros)
         return query_coords, convoleved_wzeros, query_mask
-
-

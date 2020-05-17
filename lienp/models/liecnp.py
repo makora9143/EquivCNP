@@ -65,7 +65,7 @@ class LieCNP(nn.Module):
         h1 = h1.div(h0 + 1e-8)
 
         rep_values = torch.cat([rep_coords, h0, h1], -1)  # (B, T, K+1+2) = (B, 784, 4)
-        rep_mask = torch.ones(rep_values.shape[:2]).bool().to(rep_values.device)
+        rep_mask = torch.ones(rep_values.shape[:2], dtype=torch.bool, device=rep_values.device)
         lifted_coords, lifted_values, lifted_mask = self.group.lift((rep_coords, rep_values, rep_mask), nsamples=1)
 
         _, f, _ = self.cnn((lifted_coords, lifted_values, lifted_mask))
@@ -80,14 +80,14 @@ class LieCNP(nn.Module):
             tmp = torch.cat([ctx_coords.reshape(-1), tgt_coords.reshape(-1)])
             lower, upper = tmp.min(), tmp.max()
             num_t = max(int((16 * (upper - lower)).item()), 1)
-            t_coords = torch.linspace(start=lower, end=upper, steps=num_t).reshape(1, -1, self.x_dim).float()
+            t_coords = torch.linspace(start=lower, end=upper, steps=num_t, device=ctx_coords.device).reshape(1, -1, self.x_dim)
 
         elif self.x_dim == 2:
-            i = torch.linspace(-28 / 2, 28 / 2, 28)
-            t_coords = torch.stack(torch.meshgrid([i, i]), dim=-1).float().reshape(1, -1, 2)
+            i = torch.linspace(-28 / 2, 28 / 2, 28, device=ctx_coords.device)
+            t_coords = torch.stack(torch.meshgrid([i, i]), dim=-1).reshape(1, -1, 2)
         else:
             raise NotImplementedError
-        t_coords = t_coords.repeat(ctx_coords.size(0), 1, 1).to(ctx_coords.device)
+        t_coords = t_coords.repeat(ctx_coords.size(0), 1, 1)
         return t_coords
 
 
@@ -100,7 +100,7 @@ class GridLieCNP(nn.Module):
         self.group = group
 
         self.conv_theta = LieConv(channel, 128, group=group,
-                                  num_nbhd=121, sampling_fraction=1., fill=196 / 4096,
+                                  num_nbhd=121, sampling_fraction=1., fill=1 / 10,
                                   use_bn=True, mean=True, cache=True)
         # self.conv_theta = SeparableLieConv(channel, 128, num_nbhd=81, fill=81/4096, sample=1., group=SE2(), r=4.2)
 
@@ -131,6 +131,22 @@ class GridLieCNP(nn.Module):
         std = self.pos(std).squeeze(-1)
         return mean, std.diag_embed(), ctx_density.reshape(B, H, W, C).permute(0, 3, 1, 2)
 
+    def predict(self, x, ctx_coords, ctx_density, ctx_signal, ctx_mask):
+        B, C, W, H = x.shape
+        lifted_ctx_coords, lifted_ctx_density, lifted_ctx_mask = self.group.lift((ctx_coords, ctx_density, ctx_mask), 1)
+        lifted_ctx_signal, _ = self.group.expand_like(ctx_signal, ctx_mask, lifted_ctx_coords)
+
+        lifted_ctx_coords, density_prime, lifted_ctx_mask = self.conv_theta((lifted_ctx_coords, lifted_ctx_density, lifted_ctx_mask))
+        _, signal_prime, _ = self.conv_theta((lifted_ctx_coords, lifted_ctx_signal, lifted_ctx_mask))
+
+        ctx_h = torch.cat([density_prime, signal_prime], -1)
+        _, f, _ = self.cnn((lifted_ctx_coords, ctx_h, lifted_ctx_mask))
+        mean, std = f.split(self.channel, -1)
+
+        mean = mean.squeeze(-1)
+        std = self.pos(std).squeeze(-1)
+        return mean, std.diag_embed(), ctx_density.reshape(B, H, W, C).permute(0, 3, 1, 2)
+
     def get_masked_image(self, img):
         """Get Context image and Target image
 
@@ -145,17 +161,27 @@ class GridLieCNP(nn.Module):
         """
         B, C, H, W = img.shape
         total_size = W * H
-        ctx_size = torch.empty(B, 1, 1, 1).uniform_(total_size / 100, total_size / 2)
-        # Broadcast to channel-axis [B, 1, W, H] -> [B，C, W, H]
-        ctx_mask = img.new_empty(B, 1, W, H).bernoulli_(p=ctx_size / total_size).repeat(1, C, 1, 1)
+
+        if self.training:
+            # uniform mask #FIXME
+            ctx_size = torch.empty(B, 1, 1, 1).uniform_(total_size / 100, total_size / 2)
+            # Broadcast to channel-axis [B, 1, W, H] -> [B，C, W, H]
+            ctx_mask = img.new_empty(B, 1, W, H).bernoulli_(p=ctx_size / total_size).repeat(1, C, 1, 1)
+        else:
+            # box mask
+            ctx_size = torch.empty(B, 1, 1, 1).uniform_(total_size / 100, total_size / 2)
+            # Broadcast to channel-axis [B, 1, W, H] -> [B，C, W, H]
+            ctx_mask = img.new_empty(B, 1, W, H).bernoulli_(p=ctx_size / total_size).repeat(1, C, 1, 1)
+
         #  [B, C, W, H] -> [B, W, H, C] -> [B, W*H, C]
         ctx_signal = (ctx_mask * img).permute(0, 2, 3, 1).reshape(B, -1, C)
 
-        ctx_coords = torch.linspace(-W / 2., W / 2., W)
+        ctx_coords = torch.linspace(-W / 2., W / 2., W, device=img.device)
         # [B, W*H, 2]
-        ctx_coords = torch.stack(torch.meshgrid([ctx_coords, ctx_coords]), -1).reshape(1, -1, 2).repeat(B, 1, 1).to(img.device)
+        ctx_coords = torch.stack(torch.meshgrid([ctx_coords, ctx_coords]), -1).reshape(1, -1, 2).repeat(B, 1, 1)
         ctx_density = ctx_mask.reshape(B, -1, C)
-        ctx_mask = torch.ones(*ctx_signal.shape[:2]).bool().to(img.device)
+        # ctx_mask = torch.ones(*ctx_signal.shape[:2], device=img.device).bool()
+        ctx_mask = img.new_ones(B, W * H, dtype=torch.bool)
         return ctx_coords, ctx_density, ctx_signal, ctx_mask
 
 
@@ -167,11 +193,11 @@ class ResBlock(nn.Module):
         self.group = group
 
         self.conv = nn.Sequential(
-            SeparableLieConv(in_channels, out_channels, num_nbhd=81, fill=121 / 4096, sample=1., group=group, r=r, use_bn=True, mean=True),
-            Apply(nn.ReLU(), dim=1),
-            SeparableLieConv(out_channels, out_channels, num_nbhd=81, fill=121 / 4096, sample=1., group=group, r=r, use_bn=True, mean=True)
+            SeparableLieConv(in_channels, out_channels, num_nbhd=81, fill=1 / 15, sample=1., group=group, r=r, use_bn=False, mean=True),
+            Apply(nn.ReLU(inplace=True), dim=1),
+            SeparableLieConv(out_channels, out_channels, num_nbhd=81, fill=1 / 15, sample=1., group=group, r=r, use_bn=False, mean=True)
         )
-        self.final_relu = nn.ReLU()
+        self.final_relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
         shortcut = x
