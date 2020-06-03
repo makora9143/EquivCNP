@@ -59,6 +59,7 @@ def train_dataloader(cfg):
     trainloader = DataLoader(trainset,
                              batch_size=cfg.batch_size,
                              shuffle=True,
+                             pin_memory=True,
                              num_workers=4 *
                              4 if torch.cuda.device_count() > 1 else 4)
     return trainloader
@@ -120,6 +121,7 @@ def load_group(group_name):
 def train(cfg, model, dataloader, optimizer):
     logp_meter = Metric()
     mse_meter = Metric()
+    model.train()
 
     for batch_idx, (imgs, _) in enumerate(
             progress_bar(dataloader, parent=epoch_bar)):
@@ -148,6 +150,7 @@ def test(cfg, model, dataloader):
     preds = []
     loss_meter = Metric()
     mse_meter = Metric()
+    model.eval()
 
     with torch.no_grad():
         for i in range(12):

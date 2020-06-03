@@ -5,3 +5,4 @@ dataset: mnist
 model: cnp
 aug: False
 group: T2
+num: 10
