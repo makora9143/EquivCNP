@@ -46,7 +46,7 @@ class CNP(nn.Module):
         self.softplus = nn.Softplus()
 
     def forward(self,
-                ctx: Tuple[Tensor, Tensor, Tensor],
+                ctx: Tuple[Tensor, Tensor],
                 tgt_coords: Tensor) -> MultivariateNormal:
         """Feed forward p(y_T | x_T, D_C)
 
@@ -61,7 +61,7 @@ class CNP(nn.Module):
             - (B, C, F)
 
         """
-        ctx_coords, ctx_values, _ = ctx
+        ctx_coords, ctx_values = ctx
 
         ctx_input = torch.cat([ctx_coords, ctx_values], dim=-1)
         z = self.encoder(ctx_input).mean(-2, keepdim=True)
@@ -71,4 +71,4 @@ class CNP(nn.Module):
         h = self.decoder(tgt_input)
         y_mean, y_std = h.split(1, -1)
         y_std = 0.1 + 0.9 * self.softplus(y_std).squeeze(-1)
-        return y_mean.squeeze(-1), y_std.diag_embed()
+        return y_mean.squeeze(-1), y_std.clamp(1e-8).diag_embed()

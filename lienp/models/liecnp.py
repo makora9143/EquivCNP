@@ -193,9 +193,9 @@ class ResBlock(nn.Module):
         self.group = group
 
         self.conv = nn.Sequential(
-            SeparableLieConv(in_channels, out_channels, num_nbhd=81, fill=1 / 15, sample=1., group=group, r=r, use_bn=False, mean=True),
+            SeparableLieConv(in_channels, out_channels, num_nbhd=81, fill=1 / 15, sample=1., group=group, r=r, use_bn=True, mean=True),
             Apply(nn.ReLU(inplace=True), dim=1),
-            SeparableLieConv(out_channels, out_channels, num_nbhd=81, fill=1 / 15, sample=1., group=group, r=r, use_bn=False, mean=True)
+            SeparableLieConv(out_channels, out_channels, num_nbhd=81, fill=1 / 15, sample=1., group=group, r=r, use_bn=True, mean=True)
         )
         self.final_relu = nn.ReLU(inplace=True)
 

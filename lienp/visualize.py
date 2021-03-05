@@ -60,13 +60,13 @@ def plot_and_save_image2(ctxs, tgts, preds, img_shape, epoch=None):
         img = torch.zeros((W, H, 3))
         img[:, :, 2] = torch.ones((W, H))
         img[ctx_mask[0, 0] == 1] = tgt[0, 0][ctx_mask[0, 0] == 1].unsqueeze(-1)
-        ctx_img.append(img.unsqueeze(0))
-        tgt_img.append(tgt.repeat(1, 3, 1, 1))
-        pred_img.append(tgt_y_dist.mean.reshape(1, 1, W, H).repeat(1, 3, 1, 1))
+        ctx_img.append(img)
+        tgt_img.append(tgt.repeat(1, 3//C, 1, 1))
+        pred_img.append(tgt_y_dist.mean.reshape(1, W, H, C).repeat(1, 1, 1, 3//C))
 
-    ctx_img = torch.cat(ctx_img, 0).permute(0, 3, 1, 2).unsqueeze(1).to(torch.device('cpu'))
+    ctx_img = torch.stack(ctx_img, 0).permute(0, 3, 1, 2).unsqueeze(1).to(torch.device('cpu'))
     tgt_img = torch.cat(tgt_img, 0).unsqueeze(1).to(torch.device('cpu'))
-    pred_img = torch.cat(pred_img, 0).unsqueeze(1).to(torch.device('cpu'))
+    pred_img = torch.cat(pred_img, 0).unsqueeze(1).to(torch.device('cpu')).permute(0, 1, 4, 2, 3)
 
     img = torch.cat([ctx_img, tgt_img, pred_img], 1).reshape(-1, 3, W, H)
     img = make_grid(img, nrow=6).permute(1, 2, 0).clamp(0, 1)

@@ -1,7 +1,8 @@
 batch_size: 64
 learning_rate: 1e-4
 epochs: 200
-dataset: mnist
+dataset: rbf
 model: cnp
 aug: False
 group: T2
+num: 10

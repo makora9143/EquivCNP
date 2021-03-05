@@ -7,7 +7,7 @@ from torch.distributions import MultivariateNormal
 from torch.utils.data import DataLoader
 
 import torchvision.transforms as tf
-from torchvision.datasets import MNIST
+from torchvision.datasets import MNIST, SVHN
 
 import hydra
 from omegaconf import DictConfig
@@ -50,6 +50,13 @@ def train_dataloader(cfg):
             tf.ToTensor()
         ])
         trainset = ClockDigit("~/data/clockdigits", download=True, transform=transforms)
+    elif cfg.dataset == 'svhn':
+        translation, rotation = TRANSLATION_ROTATION_LIST[cfg.se2.train]
+        transforms = tf.Compose([
+            tf.RandomAffine(rotation, translation),
+            tf.ToTensor()
+        ])
+        trainset = SVHN("~/data", split="train", transform=transforms, download=True)
     else:
         trainset = MNIST("~/data/mnist",
                          train=True,
@@ -59,6 +66,7 @@ def train_dataloader(cfg):
     trainloader = DataLoader(trainset,
                              batch_size=cfg.batch_size,
                              shuffle=True,
+                             pin_memory=True,
                              num_workers=4 *
                              4 if torch.cuda.device_count() > 1 else 4)
     return trainloader
@@ -79,6 +87,13 @@ def test_dataloader(cfg):
             tf.ToTensor()
         ])
         testset = ClockDigit("~/data/clockdigits", download=True, transform=transforms)
+    elif cfg.dataset == 'svhn':
+        translation, rotation = TRANSLATION_ROTATION_LIST[cfg.se2.test]
+        transforms = tf.Compose([
+            tf.RandomAffine(rotation, translation),
+            tf.ToTensor()
+        ])
+        testset = SVHN("~/data", split="test", transform=transforms, download=True)
     else:
         testset = MNIST("~/data/mnist",
                         train=False,
@@ -120,6 +135,8 @@ def load_group(group_name):
 def train(cfg, model, dataloader, optimizer):
     logp_meter = Metric()
     mse_meter = Metric()
+    model.train()
+    print("Epoch {} start".format(epoch_bar.main_bar.last_v + 1))
 
     for batch_idx, (imgs, _) in enumerate(
             progress_bar(dataloader, parent=epoch_bar)):
@@ -128,16 +145,19 @@ def train(cfg, model, dataloader, optimizer):
 
         mu, sigma, _ = model(imgs)
         tgt_y_dist = MultivariateNormal(mu, scale_tril=sigma)
-        loss = - tgt_y_dist.log_prob(imgs.reshape(imgs.size(0), -1)).mean()
+        loss = - tgt_y_dist.log_prob(imgs.reshape(imgs.size(0), imgs.size(1), -1).transpose(-1, -2)).mean()
         loss.backward()
         optimizer.step()
         epoch_bar.child.comment = '{:.3f}'.format(loss.item())
 
         logp_meter.log(-loss.item(), imgs.size(0))
-        mse_meter.log((tgt_y_dist.mean - imgs.reshape(imgs.size(0), -1)).pow(2).mean().item(),
+        mse_meter.log((tgt_y_dist.mean - imgs.reshape(imgs.size(0), imgs.size(1), -1).transpose(-1, -2)).pow(2).mean().item(),
                       imgs.size(0))
 
     log.info("Epoch: {}, log p={:.3f}, MSE={:.4f}".format(epoch_bar.main_bar.last_v + 1,
+                                                          logp_meter.average,
+                                                          mse_meter.average))
+    print("Epoch: {}, log p={:.3f}, MSE={:.4f}".format(epoch_bar.main_bar.last_v + 1,
                                                           logp_meter.average,
                                                           mse_meter.average))
 
@@ -148,6 +168,8 @@ def test(cfg, model, dataloader):
     preds = []
     loss_meter = Metric()
     mse_meter = Metric()
+    model.eval()
+    print("Test start")
 
     with torch.no_grad():
         for i in range(12):
@@ -156,10 +178,10 @@ def test(cfg, model, dataloader):
 
             mu, sigma, ctx_mask = model(imgs)
             tgt_y_dist = MultivariateNormal(mu, scale_tril=sigma)
-            loss = - tgt_y_dist.log_prob(imgs.reshape(imgs.size(0), -1)).mean()
+            loss = - tgt_y_dist.log_prob(imgs.reshape(imgs.size(0), imgs.size(1), -1).transpose(-1, -2)).mean()
             loss_meter.log(-loss.item(), 1)
 
-            mse_meter.log((tgt_y_dist.mean - imgs.reshape(imgs.size(0), -1)).pow(2).mean().item(),
+            mse_meter.log((tgt_y_dist.mean - imgs.reshape(imgs.size(0), imgs.size(1), -1).transpose(-1, -2)).pow(2).mean().item(),
                           imgs.size(0))
 
             imgs = imgs.to(torch.device('cpu'))
@@ -169,6 +191,8 @@ def test(cfg, model, dataloader):
         epoch = epoch_bar.main_bar.last_v + 1 if epoch_bar.main_bar.last_v is not None else cfg.epochs
         plot_and_save_image2(ctxs, tgts, preds, img_shape=(imgs.shape[1:]), epoch=epoch)
     log.info("\tEpoch {} Test: log p={:.3f}, MSE={:.4f}".format(
+        epoch, loss_meter.average, mse_meter.average))
+    print("\tEpoch {} Test: log p={:.3f}, MSE={:.4f}".format(
         epoch, loss_meter.average, mse_meter.average))
 
 
@@ -184,9 +208,12 @@ def main(cfg: DictConfig) -> None:
 
     model = load_model(cfg)
 
-    model = model(channel=1).to(device)
+    model = model(channel=3 if cfg.dataset == 'svhn' else 1)
+    print("GPU: #{}".format(torch.cuda.device_count()))
     if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
         model = torch.nn.DataParallel(model)
+    model.to(device)
 
     log.info(model)
     optimizer = optim.Adam(model.parameters(), lr=cfg.learning_rate)
@@ -195,7 +222,7 @@ def main(cfg: DictConfig) -> None:
         # log.debug(model.conv_theta.fill_fraction_ema)
         train(cfg, model, trainloader, optimizer)
 
-        if epoch % 10 == 0:
+        if epoch % 1 == 0:
             test(cfg, model, testloader)
     test(cfg, model, testloader)
     torch.save(model.cpu().state_dict(), 'model_weight.pth')
