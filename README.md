@@ -1,38 +1,41 @@
 # LieConv Conditional Neural Process
 
 
+## Install
 
-## 1D regression Task
+Recommend: Use pytorch Docker images v1.6
 
-- `learning_rate=1e-3`
-- `batch_size=16`
-- `Adam`
-
-
-
-### PointConv CNP
-
-- `WeightNet`: use batch normalization
-- `PointConv`: `use mean=True`
-- `sampling_fraction=1.0`
-- `nbhd = 5`: as well as `kernel_size` of Conv1d
+Then,
+```
+$ pip install -r requirements.txt
+```
 
 
-### LieConv CNP
+```
+$ python main1d.py batch_size=16 dataset=rbf learning_rate=1e-3 model=gcnp num=10
+$ python main1d.py batch_size=16 dataset=matern learning_rate=1e-3 model=gcnp num=10
+$ python main1d.py batch_size=16 dataset=periodic learning_rate=1e-3 model=gcnp num=5
+```
 
-- `WeightNet`: use batch normalization
-- `LieConv` : `use mean=True`
-- `sampling_fraction=1.0`
-- `fill = 5 / 64`
-- `nbhd = 5`
+```
+$ python main2d.py -m batch_size=4 dataset=clockdigit epochs=100 group=T2,SO2,RxSO2,SE2 learning_rate=5e-4 model=liecnp
+```
 
 
-## MNIST
+## BibTeX
 
-
-### PointConv
-
-- `WeightNet`: use batch normalization
-- `PointConv`: `use mean=True`
-- `sampling_fraction=1.0`
-- `nbhd = 9`: as well as `kernel_size` of Conv1d
+```
+@inproceedings{kawano2021group,
+  author    = {Makoto Kawano and
+               Wataru Kumagai and
+               Akiyoshi Sannai and
+               Yusuke Iwasawa and
+               Yutaka Matsuo},
+  title     = {Group Equivariant Conditional Neural Processes},
+  booktitle = {9th International Conference on Learning Representations, {ICLR} 2021,
+               Virtual only, May 3-7, 2021},
+  publisher = {OpenReview.net},
+  year      = {2021},
+  url       = {https://openreview.net/forum?id=e8W-hsu_q5},
+}
+```
