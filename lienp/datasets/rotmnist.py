@@ -1,10 +1,11 @@
+from genericpath import exists
 import os
 from PIL import Image
 
 import numpy as np
 
 import torch
-from torchvision.datasets.utils import download_and_extract_archive, makedir_exist_ok
+from torchvision.datasets.utils import download_and_extract_archive
 from torchvision.datasets.vision import VisionDataset
 
 # !wget -nc http://www.iro.umontreal.ca/~lisa/icml2007data/mnist_rotation_new.zip
@@ -93,8 +94,8 @@ class RotationMNIST(VisionDataset):
         if self._check_exists():
             return
 
-        makedir_exist_ok(self.raw_folder)
-        makedir_exist_ok(self.processed_folder)
+        os.makedirs(self.raw_folder, exist_ok=True)
+        os.makedirs(self.processed_folder, exist_ok=True)
 
         # download files
         for url in self.resources:

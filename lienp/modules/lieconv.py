@@ -129,7 +129,7 @@ class LieConv(PointConv):
         nbhd_ab = ab_at_query[B, M, nbhd_idx]  # (B, M, nbhd, D)
         nbhd_values = values_at_query[B, nbhd_idx]  # (B, M, nbhd, C_in)
         nbhd_masks = masks[B, nbhd_idx]  # (B, M, nbhd)
-        navg = within_ball.sum(-1).sum() / masks_at_query[:, :, None].sum()  # query1点あたりのボール内の平均数
+        navg = 1.0 * within_ball.sum(-1).sum() / masks_at_query[:, :, None].sum()  # query1点あたりのボール内の平均数
         if self.training:
             avg_fill = (navg / masks.sum(-1, dtype=torch.float).mean()).detach()  # 全体のうちどれくらい埋まってるか
             self.r += self.coeff * (self.fill_fraction - avg_fill)  # 想定のfill_fractionより少なければ範囲を追加，多ければ範囲を絞る
