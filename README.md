@@ -1,4 +1,4 @@
-# LieConv Conditional Neural Process
+# Group Equivariant Conditional Neural Process
 
 
 ## Install
